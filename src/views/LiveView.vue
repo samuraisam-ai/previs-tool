@@ -13,8 +13,10 @@
         :rect="imageRect"
         :frame-capture="frameCapture"
         :active="active"
+        @capture="captureFrame"
       />
       <div v-if="renderState.preparing" class="preparing">Preparing lights…</div>
+      <div v-if="notice" class="notice">{{ notice }}</div>
       <div class="overlay">
         <label>
           View
@@ -60,6 +62,9 @@ import { detectDevice } from '../live/deviceTier'
 import { FrameCapture, LiveScene } from '../live/LiveScene'
 import { renderState, TierId, TIERS } from '../live/renderState'
 import { editor } from '../plan/editor'
+import { requestCapture } from '../setups/capture'
+import { captureFrame as captureFrameRequest } from '../setups/captureFrame'
+import { initSetups } from '../setups/store'
 import { scene } from '../scene/store'
 import { CameraItem } from '../scene/types'
 
@@ -184,8 +189,8 @@ export default defineComponent({
       updateActive()
       // Dev-only handles for inspecting and benchmarking from the console.
       if (process.env.NODE_ENV !== 'production') {
-        Promise.all([import('../live/calibration'), import('../live/benchmark')]).then(([calibration, bench]) =>
-          Object.assign(window, { previs: live, previsScene: scene, previsEditor: editor, previsCalibration: calibration, previsBench: bench, previsDevice: device }))
+        Promise.all([import('../live/calibration'), import('../live/benchmark'), import('../setups/store'), import('../plan/history')]).then(([calibration, bench, setupsStore, history]) =>
+          Object.assign(window, { previs: live, previsScene: scene, previsEditor: editor, previsCalibration: calibration, previsBench: bench, previsDevice: device, previsSetups: setupsStore, previsHistory: history }))
       }
       resizeObserver = new ResizeObserver(layout)
       resizeObserver.observe(container.value as HTMLDivElement)
@@ -204,7 +209,41 @@ export default defineComponent({
       if (viewId.value && !list.some(cam => cam.id === viewId.value)) viewId.value = null
     })
 
+    // ── Storyboard frames ─────────────────────────────────────────────────
+    const notice = ref('')
+    let noticeTimer: number | undefined
+    const flash = (text: string) => {
+      notice.value = text
+      window.clearTimeout(noticeTimer)
+      noticeTimer = window.setTimeout(() => { notice.value = '' }, 3500)
+    }
+    let capturing = false
+    const captureFrame = async () => {
+      const cam = viewing.value
+      if (!live || !cam) { flash('Choose a camera in View to capture a storyboard frame.'); return }
+      if (capturing) return
+      capturing = true
+      try {
+        await initSetups()
+        requestCapture(await captureFrameRequest(live, cam))
+      } catch (e) {
+        flash(e instanceof Error ? e.message : 'Could not capture the frame.')
+      } finally {
+        capturing = false
+      }
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (!props.active || event.metaKey || event.ctrlKey || event.altKey) return
+      if (document.querySelector('[aria-modal="true"]')) return
+      const target = event.target as HTMLElement
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
+      if (event.key === 'c' || event.key === 'C') { captureFrame(); event.preventDefault() }
+    }
+    window.addEventListener('keydown', onKey)
+
     onBeforeUnmount(() => {
+      window.removeEventListener('keydown', onKey)
+      window.clearTimeout(noticeTimer)
       window.clearInterval(autoTimer)
       document.removeEventListener('visibilitychange', updateActive)
       resizeObserver?.disconnect()
@@ -215,7 +254,7 @@ export default defineComponent({
 
     return {
       container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, editor, device,
-      performance, tierLabel, autoScaleNote, renderState
+      performance, tierLabel, autoScaleNote, renderState, notice, captureFrame
     }
   }
 })
@@ -268,6 +307,18 @@ canvas {
   border-radius: 12px;
   background: rgba(20, 20, 24, 0.85);
   color: var(--accent);
+}
+.notice {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  z-index: 3;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: rgba(20, 20, 24, 0.9);
+  border: 1px solid var(--line);
 }
 .unsupported {
   max-width: 460px;

@@ -1,23 +1,7 @@
 <template>
   <div class="plan">
     <div ref="area" class="canvas-area">
-      <div class="toolbar">
-        <div class="group">
-          <button v-for="t in tools" :key="t.id" :class="{ on: editor.tool === t.id }" :title="`${t.label} (${t.key})`" @click="setTool(t.id)">
-            {{ t.label }}<kbd>{{ t.key }}</kbd>
-          </button>
-        </div>
-        <div class="group">
-          <button @click="add('subject')">+ Subject</button>
-          <button :class="{ on: showLibrary }" @click="showLibrary = !showLibrary">+ Light</button>
-          <button @click="add('camera')">+ Camera</button>
-        </div>
-        <div class="group">
-          <button title="Undo (⌘Z)" @click="undo">↶</button>
-          <button title="Redo (⇧⌘Z)" @click="redo">↷</button>
-          <button title="Fit plan to view (F)" @click="fit">Fit</button>
-        </div>
-      </div>
+      <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" />
       <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
 
       <!-- SVG units are metres. svg y = -world z, so "up" on the plan is +z in 3D. -->
@@ -60,6 +44,7 @@
           Select to move; Shift-click or drag a box to select several. Use the box handles to rotate and scale,
           arrow keys to nudge (Shift ×10), ⌘D duplicate, ⌘C/⌘V copy/paste, Delete to remove, ⌘Z undo.
           Scroll to zoom, right-drag or Space-drag to pan.
+          <b>C</b> captures the setup (plan + light and camera legend) into a production.
         </p>
         <h4 class="section">Snapping</h4>
         <label class="check"><input type="checkbox" v-model="editor.snap.grid" /> Grid</label>
@@ -82,6 +67,10 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import LightLibrary from '../components/LightLibrary.vue'
+import PlanToolbar from '../plan/PlanToolbar.vue'
+import { requestCapture } from '../setups/capture'
+import { capturePlan } from '../setups/capturePlan'
+import { initSetups } from '../setups/store'
 import ArchLayer from '../plan/ArchLayer.vue'
 import ItemLayer from '../plan/ItemLayer.vue'
 import OverlayLayer from '../plan/OverlayLayer.vue'
@@ -113,15 +102,6 @@ type Gesture =
   | { type: 'room'; a: Pt }
   | { type: 'measure' }
 
-const TOOLS: Array<{ id: Tool; label: string; key: string }> = [
-  { id: 'select', label: 'Select', key: 'V' },
-  { id: 'room', label: 'Room', key: 'R' },
-  { id: 'wall', label: 'Wall', key: 'W' },
-  { id: 'door', label: 'Door', key: 'D' },
-  { id: 'window', label: 'Window', key: 'N' },
-  { id: 'opening', label: 'Doorway', key: 'O' },
-  { id: 'measure', label: 'Measure', key: 'M' }
-]
 const KEY_TOOLS: Record<string, Tool> = { v: 'select', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
 const HINTS: Record<Tool, string> = {
   select: 'Click to select · drag to move · Shift-click / drag a box for several · handles rotate & scale · Alt = no snapping',
@@ -136,7 +116,7 @@ const SNAP_PX = 10
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary },
+  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -532,6 +512,12 @@ export default defineComponent({
       setSelection([item.id])
     }
     const add = (kind: ItemKind) => placeInView(addItem(kind))
+    // From the Elements menu: subjects and cameras are added in view; Light opens the library.
+    const onAdd = (kind: 'subject' | 'camera' | 'light') => {
+      setTool('select')
+      if (kind === 'light') showLibrary.value = true
+      else add(kind)
+    }
     const addLight = (fixtureId: string) => {
       placeInView(addItem('light', fixtureId))
       showLibrary.value = false
@@ -540,6 +526,8 @@ export default defineComponent({
     // ── Keyboard ──────────────────────────────────────────────────────────
     const onKey = (event: KeyboardEvent) => {
       if (!props.active) return
+      // A dialog (capture, viewer) owns the keyboard while it's open.
+      if (document.querySelector('[aria-modal="true"]')) return
       const target = event.target as HTMLElement
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
       const mod = event.metaKey || event.ctrlKey
@@ -571,6 +559,7 @@ export default defineComponent({
         return
       }
       if (key === 'f') { fit(); return }
+      if (key === 'c') { capture(); return }
       const tool = KEY_TOOLS[key]
       if (tool) setTool(tool)
     }
@@ -601,8 +590,22 @@ export default defineComponent({
       resizeObserver?.disconnect()
     })
 
+    // ── Capture to Setups ─────────────────────────────────────────────────
+    let capturing = false
+    const capture = async () => {
+      if (capturing || !svg.value) return
+      capturing = true
+      try {
+        await initSetups()
+        requestCapture(await capturePlan(svg.value))
+      } finally {
+        capturing = false
+      }
+    }
+
     return {
-      svg, area, editor, tools: TOOLS, setTool, showLibrary, add, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
+      capture,
+      svg, area, editor, setTool, showLibrary, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
       onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
     }
   }
@@ -612,16 +615,6 @@ export default defineComponent({
 <style scoped>
 .plan { display: flex; width: 100%; height: 100%; }
 .canvas-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-.toolbar {
-  position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 10px; z-index: 4; pointer-events: none;
-}
-.toolbar .group {
-  display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: rgba(23, 24, 28, 0.92); border: 1px solid var(--line); border-radius: 8px; pointer-events: auto;
-}
-.toolbar button { border: none; background: transparent; padding: 5px 9px; font-size: 13px; display: flex; align-items: center; gap: 5px; }
-.toolbar button:hover { background: #2c2f37; }
-.toolbar button.on { background: var(--accent); color: #1a1a1a; }
-.toolbar kbd { font-family: inherit; font-size: 10px; opacity: 0.55; }
 .canvas { flex: 1; width: 100%; min-height: 0; background: #15161a; user-select: none; touch-action: none; }
 .canvas.tool-select { cursor: default; }
 .canvas.tool-wall, .canvas.tool-room, .canvas.tool-measure { cursor: crosshair; }

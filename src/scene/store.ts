@@ -26,6 +26,13 @@ function defaultArchitecture() {
 
 let nextId = 1
 export const newId = (kind: string) => `${kind}-${nextId++}`
+// After loading a saved scene, keep new ids clear of the loaded ones ("light-12" → next is 13+).
+export function reserveIds(ids: string[]): void {
+  ids.forEach(id => {
+    const n = Number(id.slice(id.lastIndexOf('-') + 1))
+    if (Number.isFinite(n) && n >= nextId) nextId = n + 1
+  })
+}
 
 export const DEFAULT_FIXTURE = 'forza-300b-ii'
 

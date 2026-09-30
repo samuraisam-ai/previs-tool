@@ -333,11 +333,7 @@ export class CameraPipeline {
       this.scopeTarget = engine.createRenderTargetTexture({ width: W, height: H }, {
         generateMipMaps: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE, samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: false
       })
-      this.scopeRenderer = new EffectRenderer(engine)
-      this.scopeWrapper = new EffectWrapper({
-        engine, name: 'scopeDown', samplerNames: ['source'],
-        fragmentShader: 'precision highp float; varying vec2 vUV; uniform sampler2D source; void main(void) { gl_FragColor = vec4(texture2D(source, vUV).rgb, 1.0); }'
-      })
+      this.ensureCopyEffect()
       this.scopeBuffer = gl.createBuffer()
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.scopeBuffer)
       gl.bufferData(gl.PIXEL_PACK_BUFFER, W * H * 4, gl.STREAM_READ)
@@ -370,6 +366,48 @@ export class CameraPipeline {
       }
       poll()
     })
+  }
+
+  // A plain texture copy (resampling to the target size), shared by scopes and stills.
+  private ensureCopyEffect(): void {
+    if (this.scopeWrapper) return
+    const engine = this.scene.getEngine()
+    this.scopeRenderer = new EffectRenderer(engine)
+    this.scopeWrapper = new EffectWrapper({
+      engine, name: 'scopeDown', samplerNames: ['source'],
+      fragmentShader: 'precision highp float; varying vec2 vUV; uniform sampler2D source; void main(void) { gl_FragColor = vec4(texture2D(source, vUV).rgb, 1.0); }'
+    })
+  }
+
+  // The clean graded frame at full render resolution (no zebras, false colour or OSD), for
+  // storyboard stills. Synchronous: call right after a frame has been drawn. Rows are bottom-up.
+  // The pass textures span the whole canvas with the letterboxed frame stretched across them, so
+  // the copy resamples back to the recording `aspect` (e.g. 16:9).
+  readStill(aspect: number): { data: Uint8Array; width: number; height: number } | null {
+    const source = this.monitor.inputTexture?.texture
+    const engine = this.scene.getEngine()
+    const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl
+    if (!source || !gl) return null
+    this.ensureCopyEffect()
+    const wrapper = this.scopeWrapper as EffectWrapper
+    if (!wrapper.effect.isReady()) return null
+    const width = source.width
+    const height = Math.round(width / aspect)
+    const target = engine.createRenderTargetTexture({ width, height }, {
+      generateMipMaps: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE, samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: false
+    })
+    try {
+      wrapper.onApplyObservable.addOnce(() => { wrapper.effect._bindTexture('source', source) })
+      ;(this.scopeRenderer as EffectRenderer).render(wrapper, target)
+      engine.bindFramebuffer(target)
+      const data = new Uint8Array(width * height * 4)
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data)
+      engine.unBindFramebuffer(target)
+      engine.restoreDefaultFramebuffer()
+      return { data, width, height }
+    } finally {
+      target.dispose()
+    }
   }
 
   dispose(camera: Camera): void {

@@ -3,32 +3,45 @@
     <header>
       <strong>Previs</strong>
       <nav>
-        <button :class="{ on: view === 'plan' }" @click="view = 'plan'">Floor Plan</button>
-        <button :class="{ on: view === 'live' }" @click="view = 'live'">Live View</button>
+        <button :class="{ on: nav.view === 'plan' }" @click="nav.view = 'plan'">Floor Plan</button>
+        <button :class="{ on: nav.view === 'live' }" @click="nav.view = 'live'">Live View</button>
+        <button :class="{ on: nav.view === 'setups' }" @click="nav.view = 'setups'">Setups</button>
       </nav>
     </header>
     <main>
       <!-- Both views stay mounted so the Babylon engine is created once. -->
-      <FloorPlanView v-show="view === 'plan'" :active="view === 'plan'" />
-      <LiveView v-show="view === 'live'" :active="view === 'live'" />
+      <FloorPlanView v-show="nav.view === 'plan'" :active="nav.view === 'plan'" />
+      <LiveView v-show="nav.view === 'live'" :active="nav.view === 'live'" />
+      <SetupsView v-if="nav.view === 'setups'" />
     </main>
+    <CaptureDialog v-if="captureState.request" :key="captureState.request.previewUrl" :request="captureState.request" />
+    <CaptureToast />
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent } from 'vue'
+import { nav } from './nav'
+import { captureState } from './setups/capture'
+import CaptureDialog from './setups/components/CaptureDialog.vue'
+import CaptureToast from './setups/components/CaptureToast.vue'
+import { initSetups } from './setups/store'
 import FloorPlanView from './views/FloorPlanView.vue'
 import LiveView from './views/LiveView.vue'
+import SetupsView from './views/SetupsView.vue'
 
 export default defineComponent({
   name: 'App',
   components: {
     FloorPlanView,
-    LiveView
+    LiveView,
+    SetupsView,
+    CaptureDialog,
+    CaptureToast
   },
   setup() {
-    const view = ref<'plan' | 'live'>('plan')
-    return { view }
+    initSetups()
+    return { nav, captureState }
   }
 })
 </script>
@@ -60,6 +73,7 @@ button, input, select {
 button { cursor: pointer; }
 button:hover { background: #2c2f37; }
 input[type='color'] { padding: 2px; height: 30px; width: 60px; }
+textarea { font: inherit; color: var(--text); background: #23252c; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; }
 input[type='range'] { padding: 0; accent-color: var(--accent); }
 </style>
 

@@ -17,6 +17,7 @@
     </svg>
 
     <button v-if="!d.osd" class="disp-chip" title="Show viewfinder display (D)" @click="d.osd = true">DISP</button>
+    <button v-if="!d.osd" class="disp-chip still-chip" title="Capture storyboard frame (C)" @click="$emit('capture')">◉ FRAME</button>
 
     <template v-if="d.osd">
       <!-- Status line -->
@@ -35,6 +36,7 @@
         <button :class="{ on: menuOpen }" @click="menuOpen = !menuOpen">MENU</button>
         <button @click="d.osd = false" title="Hide display (D)">DISP</button>
         <button :class="['rec-btn', { on: p.recording }]" @click="toggleRec">REC</button>
+        <button class="still-btn" title="Capture a clean storyboard frame to a production (C)" @click="$emit('capture')">◉ FRAME</button>
       </div>
 
       <!-- Exposure assist legend -->
@@ -169,6 +171,7 @@ export default defineComponent({
     frameCapture: { type: Object as PropType<FrameCapture | null>, default: null },
     active: { type: Boolean, default: true }
   },
+  emits: ['capture'],
   setup(props) {
     const cam = computed(() => {
       const item = getItem(props.cameraId)
@@ -376,6 +379,7 @@ export default defineComponent({
     // ── Keyboard / wheel ─────────────────────────────────────────────────────
     const onKey = (event: KeyboardEvent) => {
       if (!props.active || !cam.value) return
+      if (document.querySelector('[aria-modal="true"]')) return
       const target = event.target as HTMLElement
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
       if (event.key === 'd' || event.key === 'D') d.value.osd = !d.value.osd
@@ -458,6 +462,8 @@ button { font-family: inherit; text-shadow: none; }
 .side-buttons button.on { background: #ffb547; color: #111; border-color: #ffb547; }
 .side-buttons .rec-btn { color: #ff6259; }
 .side-buttons .rec-btn.on { background: #ff3b30; color: #fff; border-color: #ff3b30; }
+.side-buttons .still-btn { color: #ffb547; margin-top: 6px; }
+.still-chip { top: 32px; color: #ffb547; }
 
 .fc-legend { position: absolute; top: 30px; left: 10px; display: flex; font-size: 9px; }
 .fc-legend span { padding: 1px 5px; color: #fff; text-shadow: none; }

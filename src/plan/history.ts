@@ -1,5 +1,5 @@
 import { watch } from 'vue'
-import { scene } from '../scene/store'
+import { reserveIds, scene } from '../scene/store'
 import { editor, setSelection } from './editor'
 
 // Undo/redo for everything you build on the plan: snapshots of the document's content, taken once
@@ -66,4 +66,27 @@ export function startHistory(): void {
     timer = window.setTimeout(() => { if (!editor.dragging) commit() }, 350)
   }, { deep: true })
   watch(() => editor.dragging, dragging => { if (!dragging) commit() })
+}
+
+// A whole scene as saved with a setup capture: content plus the lighting context.
+export function snapshotScene(): string {
+  return JSON.stringify({
+    walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items,
+    ambientLux: scene.ambientLux, activeCameraId: scene.activeCameraId
+  })
+}
+
+// Replace the current scene with a saved one, as a single undoable step.
+export function loadScene(json: string): void {
+  commit()
+  const doc = JSON.parse(json)
+  reserveIds([...doc.walls, ...doc.openings, ...doc.rooms, ...doc.items].map((e: { id: string }) => e.id))
+  scene.walls.splice(0, scene.walls.length, ...doc.walls)
+  scene.openings.splice(0, scene.openings.length, ...doc.openings)
+  scene.rooms.splice(0, scene.rooms.length, ...doc.rooms)
+  scene.items.splice(0, scene.items.length, ...doc.items)
+  if (typeof doc.ambientLux === 'number') scene.ambientLux = doc.ambientLux
+  scene.activeCameraId = doc.activeCameraId ?? scene.items.find(i => i.kind === 'camera')?.id ?? null
+  setSelection([])
+  commit()
 }

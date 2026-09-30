@@ -100,6 +100,7 @@ export class LiveScene {
   private lastScopeRead = 0
   private reading = false
   private scopeFrameDirty = false
+  private stillRequests: Array<{ resolve: (frame: FrameCapture) => void; reject: (error: Error) => void }> = []
   // Rendering on demand: nothing is drawn unless something changed or the camera is moving.
   private active = true
   private needsFrames = 2
@@ -271,6 +272,33 @@ export class LiveScene {
       this.scopeFrameDirty = true
     }
     this.readScopes()
+    this.readStills()
+  }
+
+  // ── Storyboard stills ───────────────────────────────────────────────────
+  // The clean graded frame of the camera being looked through, at full render resolution.
+  // Waits for the camera to settle (no draft resolution) and re-processes the last frame first.
+  captureStill(): Promise<FrameCapture> {
+    if (!this.viewingId) return Promise.reject(new Error('Look through a camera to capture a frame.'))
+    return new Promise((resolve, reject) => {
+      this.stillRequests.push({ resolve, reject })
+      this.needsReprocess = true
+    })
+  }
+
+  private readStills(): void {
+    if (!this.stillRequests.length || this.inMotion || this.awaitingReady || !this.hasFrame) return
+    const requests = this.stillRequests.splice(0)
+    const r = this.imageRect
+    const aspect = r && r.height > 0 ? r.width / r.height : 16 / 9
+    const still = this.viewingId ? this.entries.get(this.viewingId)?.pipeline?.readStill(aspect) : null
+    if (still) requests.forEach(r => r.resolve(still))
+    else if (!this.viewingId) requests.forEach(r => r.reject(new Error('Look through a camera to capture a frame.')))
+    else {
+      // Copy shader still compiling: try again on the next processed frame.
+      this.stillRequests.push(...requests)
+      this.requestReprocessSoon()
+    }
   }
 
   // Render resolution relative to CSS pixels (1 = draft, 2 = full retina), capped at the display's DPR.

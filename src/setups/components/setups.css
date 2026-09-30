@@ -1,0 +1,10 @@
+/* Shared page styles for the Setups screens. */
+.setups .page { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
+.setups .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.setups .head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+.setups .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.setups button.primary { background: var(--accent); border-color: var(--accent); color: #1a1a1a; }
+.setups button.primary:hover { background: #ffc46b; }
+.setups button.danger:hover { border-color: #e5484d; color: #ff7b7f; }
+.setups .empty { color: var(--muted); padding: 24px 0; line-height: 1.5; }
+.setups .error { color: #ff7b7f; }
