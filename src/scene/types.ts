@@ -71,14 +71,52 @@ export interface CameraItem extends BaseItem { kind: 'camera'; props: CameraProp
 
 export type SceneItem = SubjectItem | LightItem | CameraItem
 
-export interface Room {
-  width: number
-  depth: number
+// ── Architecture ─────────────────────────────────────────────────────────────
+export interface Pt {
+  x: number
+  z: number
+}
+
+export interface Wall {
+  id: string
+  a: Pt
+  b: Pt
+  thickness: number
   height: number
 }
 
+export type OpeningKind = 'door' | 'double-door' | 'sliding-door' | 'opening' | 'window'
+
+// A door, window or plain opening cut into a wall. `offset` is the centre's distance from wall.a.
+export interface Opening {
+  id: string
+  wallId: string
+  kind: OpeningKind
+  offset: number
+  width: number
+  height: number
+  sill: number
+  hinge: 'left' | 'right'
+  swing: 'in' | 'out'
+  openAngle: number // current angle (deg), 0 = closed; sliding doors use it as 0–90 = shut–open
+  openTo: number // angle it opens to when toggled open
+}
+
+export type FloorFinish = 'wood' | 'concrete' | 'tile' | 'carpet'
+
+export interface RoomArea {
+  id: string
+  name: string
+  points: Pt[]
+  floor: FloorFinish
+  ceiling: boolean
+  ceilingHeight: number
+}
+
 export interface SceneDoc {
-  room: Room
+  walls: Wall[]
+  openings: Opening[]
+  rooms: RoomArea[]
   items: SceneItem[]
   selectedId: string | null
   // The camera whose exposure drives the orbit view and the light meter.

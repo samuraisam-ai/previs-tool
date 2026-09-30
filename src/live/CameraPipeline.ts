@@ -4,6 +4,7 @@ import {
   DepthRenderer,
   Effect,
   PostProcess,
+  RenderTargetTexture,
   Scene,
   Texture
 } from '@babylonjs/core'
@@ -254,6 +255,8 @@ export class CameraPipeline {
     const HALF = Constants.TEXTURETYPE_HALF_FLOAT
     const LINEAR = Texture.BILINEAR_SAMPLINGMODE
     this.depth = scene.enableDepthRenderer(camera, false, true, Texture.NEAREST_SAMPLINGMODE, true)
+    // A placed camera doesn't move between plan edits: render its depth once per change.
+    this.depth.getDepthMap().refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE
 
     const capture = new PostProcess('capture', 'previsCapture', null, null, 1, camera, LINEAR, engine, false, null, HALF)
     // The scene renders into this target, so it carries the anti-aliasing (MSAA) for the image.
@@ -302,6 +305,11 @@ export class CameraPipeline {
       effect.setFloat('time', performance.now() / 1000)
     }
     this.passes = [capture, cocDown, bokeh, composite, imaging, monitor]
+  }
+
+  // Re-render the depth map after the scene changed.
+  invalidate(): void {
+    this.depth.getDepthMap().resetRefreshCounter()
   }
 
   // The graded image before the monitor's assist overlays (false colour, zebras) — what scopes measure.

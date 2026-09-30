@@ -1,10 +1,22 @@
 <template>
   <div class="plan">
-    <div class="canvas-area">
+    <div ref="area" class="canvas-area">
       <div class="toolbar">
-        <button @click="add('subject')">+ Subject</button>
-        <button :class="{ on: showLibrary }" @click="showLibrary = !showLibrary">+ Light</button>
-        <button @click="add('camera')">+ Camera</button>
+        <div class="group">
+          <button v-for="t in tools" :key="t.id" :class="{ on: editor.tool === t.id }" :title="`${t.label} (${t.key})`" @click="setTool(t.id)">
+            {{ t.label }}<kbd>{{ t.key }}</kbd>
+          </button>
+        </div>
+        <div class="group">
+          <button @click="add('subject')">+ Subject</button>
+          <button :class="{ on: showLibrary }" @click="showLibrary = !showLibrary">+ Light</button>
+          <button @click="add('camera')">+ Camera</button>
+        </div>
+        <div class="group">
+          <button title="Undo (⌘Z)" @click="undo">↶</button>
+          <button title="Redo (⇧⌘Z)" @click="redo">↷</button>
+          <button title="Fit plan to view (F)" @click="fit">Fit</button>
+        </div>
       </div>
       <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
 
@@ -12,111 +24,57 @@
       <svg
         ref="svg"
         :viewBox="viewBox"
-        preserveAspectRatio="xMidYMid meet"
-        @pointerdown.self="select(null)"
-        @pointermove="onPointerMove"
-        @pointerup="endDrag"
-        @pointerleave="endDrag"
+        :class="['canvas', `tool-${editor.tool}`, { panning: panning }]"
+        @pointerdown="onDown"
+        @pointermove="onMove"
+        @pointerup="onUp"
+        @pointercancel="onUp"
+        @wheel.prevent="onWheel"
+        @dblclick="onDouble"
+        @contextmenu.prevent
       >
         <g class="grid" pointer-events="none">
-          <line v-for="x in gridX" :key="'gx' + x" :x1="x" :x2="x" :y1="bounds.minY" :y2="bounds.maxY" :class="{ major: isMajor(x) }" />
-          <line v-for="y in gridY" :key="'gy' + y" :y1="y" :y2="y" :x1="bounds.minX" :x2="bounds.maxX" :class="{ major: isMajor(y) }" />
+          <line v-for="l in grid.lines" :key="l.k" :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2" :class="{ major: l.major }" />
         </g>
-
-        <rect class="room" :x="-room.width / 2" :y="-room.depth / 2" :width="room.width" :height="room.depth" pointer-events="none" />
-        <text class="dim" :x="0" :y="-room.depth / 2 - 0.2" text-anchor="middle">{{ room.width.toFixed(1) }} m</text>
-        <text class="dim" :transform="`translate(${-room.width / 2 - 0.2} 0) rotate(-90)`" text-anchor="middle">{{ room.depth.toFixed(1) }} m</text>
-
-        <g
-          v-for="item in items"
-          :key="item.id"
-          :transform="`translate(${item.x} ${-item.z})`"
-          :class="['item', item.kind, { selected: item.id === selectedId }]"
-        >
-          <g :transform="`rotate(${item.rotationY})`">
-            <template v-if="item.kind === 'light'">
-              <circle v-if="visuals[item.id].omni" class="beam" :r="visuals[item.id].throw" :fill="visuals[item.id].hex" pointer-events="none" />
-              <path
-                v-else
-                :class="['beam', { hard: visuals[item.id].hard }]"
-                :d="wedge(visuals[item.id].beam, visuals[item.id].throw)"
-                :fill="visuals[item.id].hex"
-                :stroke="visuals[item.id].hex"
-                pointer-events="none"
-              />
-              <g class="fixture" @pointerdown.stop="startMove($event, item)">
-                <circle class="hit" r="0.25" />
-                <path v-for="(part, i) in visuals[item.id].parts" :key="i" :d="part.d" :class="part.glow ? 'glow' : 'body'" :fill="part.glow ? visuals[item.id].hex : undefined" />
-              </g>
-            </template>
-
-            <template v-else-if="item.kind === 'camera'">
-              <path class="fov" :d="wedge(camViews[item.id].fov, camViews[item.id].length)" pointer-events="none" />
-              <path class="dof" :d="camViews[item.id].dofPath" pointer-events="none" />
-              <path class="focus-arc" :d="camViews[item.id].focusPath" pointer-events="none" />
-              <rect class="body" x="-0.14" y="-0.1" width="0.28" height="0.24" rx="0.03" @pointerdown.stop="startMove($event, item)" />
-              <rect class="lens" x="-0.07" y="-0.2" width="0.14" height="0.1" @pointerdown.stop="startMove($event, item)" />
-            </template>
-
-            <template v-else>
-              <circle class="body" r="0.22" @pointerdown.stop="startMove($event, item)" />
-              <path class="nose" d="M -0.08 -0.2 L 0 -0.32 L 0.08 -0.2 Z" pointer-events="none" />
-            </template>
-
-            <g v-if="item.id === selectedId" class="rotate-handle">
-              <line x1="0" y1="-0.25" x2="0" y2="-0.6" pointer-events="none" />
-              <circle cy="-0.66" r="0.07" @pointerdown.stop="startRotate($event, item)" />
-            </g>
-          </g>
-          <text class="label" y="0.42" text-anchor="middle" pointer-events="none">{{ item.name }}{{ item.kind === 'camera' ? ` · ${camViews[item.id].lensMm}mm` : '' }}</text>
-          <text v-if="(item.kind === 'camera' || item.kind === 'light') && item.props.tilt" class="tilt-label" y="0.6" text-anchor="middle" pointer-events="none">
-            {{ Math.abs(item.props.tilt) }}° {{ item.props.tilt > 0 ? 'down' : 'up' }}
-          </text>
-        </g>
+        <ArchLayer :px="px" />
+        <ItemLayer :px="px" />
+        <OverlayLayer :px="px" :marquee="marqueeRect" />
       </svg>
-      <div class="hint">Drag to move (snaps to 10 cm, hold Alt for free) · drag the dot to aim (snaps to 5°, hold Alt for free) · Delete removes</div>
+
+      <div class="scalebar" :style="{ width: `${scaleBar.px}px` }"><span>{{ scaleBar.label }}</span></div>
+      <div class="hint">{{ hint }}</div>
     </div>
 
-    <aside class="panel">
-      <template v-if="selected">
-        <h4>{{ kindLabel[selected.kind] }}</h4>
-        <label>Name <input v-model="selected.name" /></label>
-        <label>Height (m) <input type="number" step="0.05" min="0.1" max="6" v-model.number="selected.height" /></label>
-        <label>Aim (°) <input type="number" step="5" v-model.number="selected.rotationY" /></label>
-        <div class="readout">x {{ selected.x.toFixed(2) }} m · z {{ selected.z.toFixed(2) }} m</div>
-
-        <LightProperties v-if="selected.kind === 'light'" :id="selected.id" />
-
-        <p v-if="selected.kind === 'subject' && !meter" class="readout">Add a camera to meter this subject.</p>
-        <template v-if="selected.kind === 'subject' && meter">
-          <h4 class="section">Light meter (face)</h4>
-          <div class="meter-total">
-            <strong>{{ meter.total.toLocaleString() }} lux</strong>
-            <span>≈ T{{ meter.stop }} at ISO {{ meter.cam.iso }}, {{ meter.shutter }}{{ meter.filters }}</span>
-          </div>
-          <div class="meter-vs" :class="meter.verdict">{{ meter.vsText }}</div>
-          <div class="meter-row" v-for="row in meter.rows" :key="row.id">
-            <i class="swatch" :style="{ background: row.hex }"></i>{{ row.name }} <span>{{ row.lux.toLocaleString() }} lux</span>
-          </div>
-          <label v-if="cameraList.length > 1">Metering for
-            <select v-model="scene.activeCameraId"><option v-for="c in cameraList" :key="c.id" :value="c.id">{{ c.name }}</option></select>
-          </label>
-          <div class="exposure">
-            <label>ISO
-              <select v-model.number="meter.cam.iso"><option v-for="iso in isos" :key="iso" :value="iso">{{ iso }}</option></select>
-            </label>
-            <label>Camera T-stop
-              <select v-model.number="meter.cam.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
-            </label>
-          </div>
-          <div class="readout">Direct light plus estimated room bounce; shadows aren't counted.</div>
-        </template>
-
-        <CameraProperties v-if="selected.kind === 'camera'" :id="selected.id" />
-
-        <button class="danger" @click="remove(selected.id)">Delete</button>
-      </template>
-      <p v-else class="empty">Select an item on the plan to edit it, or add one from the toolbar.</p>
+    <aside class="panel plan-panel">
+      <ItemPanel v-if="panel === 'item'" :id="editor.selection[0]" />
+      <WallPanel v-else-if="panel === 'wall'" :id="editor.selection[0]" />
+      <OpeningPanel v-else-if="panel === 'opening'" :id="editor.selection[0]" />
+      <SelectionPanel v-else-if="panel === 'selection'" :ids="editor.selection" />
+      <div v-else class="panel-body">
+        <h4>Floor plan</h4>
+        <p class="readout">
+          <b>Room (R)</b>: drag a rectangle. <b>Wall (W)</b>: click to place, then drag its ends or side handle.
+          <b>Door (D) / Window (N) / Doorway (O)</b>: click on a wall. <b>Measure (M)</b>: drag between two points.
+        </p>
+        <p class="readout">
+          Select to move; Shift-click or drag a box to select several. Use the box handles to rotate and scale,
+          arrow keys to nudge (Shift ×10), ⌘D duplicate, ⌘C/⌘V copy/paste, Delete to remove, ⌘Z undo.
+          Scroll to zoom, right-drag or Space-drag to pan.
+        </p>
+        <h4 class="section">Snapping</h4>
+        <label class="check"><input type="checkbox" v-model="editor.snap.grid" /> Grid</label>
+        <label>Grid step
+          <select v-model.number="editor.snap.gridSize">
+            <option :value="0.01">1 cm</option>
+            <option :value="0.05">5 cm</option>
+            <option :value="0.1">10 cm</option>
+            <option :value="0.25">25 cm</option>
+            <option :value="0.5">50 cm</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" v-model="editor.snap.objects" /> Wall ends &amp; corners</label>
+        <p class="readout">Hold Alt while dragging to place freely.</p>
+      </div>
     </aside>
   </div>
 </template>
@@ -124,209 +82,112 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import LightLibrary from '../components/LightLibrary.vue'
-import CameraProperties from '../components/CameraProperties.vue'
-import LightProperties from '../components/LightProperties.vue'
-import { getBody } from '../library/cameras'
-import { getLens } from '../library/lenses'
-import { dofLimits, focusDistance, formatShutter, horizontalFov } from '../library/optics'
+import ArchLayer from '../plan/ArchLayer.vue'
+import ItemLayer from '../plan/ItemLayer.vue'
+import OverlayLayer from '../plan/OverlayLayer.vue'
+import ItemPanel from '../plan/panels/ItemPanel.vue'
+import OpeningPanel from '../plan/panels/OpeningPanel.vue'
+import SelectionPanel from '../plan/panels/SelectionPanel.vue'
+import WallPanel from '../plan/panels/WallPanel.vue'
+import { clearSelection, editor, isSelected, OPENING_TOOLS, setSelection, toggleSelection, Tool } from '../plan/editor'
+import { add as addPt, boundsOf, dist, projectOnWall, round3, snapAngle, snapToGrid, sub } from '../plan/geometry'
+import { redo, startHistory, undo } from '../plan/history'
 import {
-  illuminanceAt, nearestStop, ResolvedLight, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor
-} from '../library/photometry'
-import { activeCamera, addItem, getItem, removeItem, scene, sceneBounce, select } from '../scene/store'
-import { CameraItem, ItemKind, LightItem, SceneItem } from '../scene/types'
+  addOpening, addRoomRect, addWallAt, applyTransform, beginEndpointDrag, beginTransform, clampOffset, copySelection,
+  deleteIds, duplicateSelection, expandSelection, getEntity, getWall, moveEndpoint, nearestPoint, nearestWall,
+  nudgeSelection, openingDefaults, openingFits, pasteClipboard, rotateAbout, scaleAbout, selectionBounds,
+  selectionPoints, slideOpenings, snapCandidates, toggleDoor, TransformSession, translate
+} from '../plan/ops'
+import { addItem, getItem, scene } from '../scene/store'
+import { ItemKind, Pt, SceneItem, Wall } from '../scene/types'
 
-const MARGIN = 1.5
-const MOVE_SNAP = 0.1
-const ROTATE_SNAP = 5
+type Gesture =
+  | { type: 'pan'; sx: number; sy: number; cx: number; cz: number }
+  | { type: 'move'; start: Pt; ids: string[]; session: TransformSession | null; clickId: string | null }
+  | { type: 'marquee'; a: Pt; b: Pt; additive: boolean }
+  | { type: 'rotate'; pivot: Pt; start: number; session: TransformSession }
+  | { type: 'scale'; handle: string; anchor: Pt; ref: Pt; session: TransformSession; w: number; d: number }
+  | { type: 'wallEnd'; wall: Wall; fixed: Pt; session: TransformSession }
+  | { type: 'wallThick'; wall: Wall }
+  | { type: 'aim'; item: SceneItem }
+  | { type: 'room'; a: Pt }
+  | { type: 'measure' }
 
-const snap = (value: number, step: number) => Math.round(value / step) * step
-const round = (value: number) => Math.round(value * 1000) / 1000
-
-interface LightVisual {
-  omni: boolean
-  hard: boolean
-  beam: number
-  throw: number
-  hex: string
-  parts: Array<{ d: string; glow: boolean }>
+const TOOLS: Array<{ id: Tool; label: string; key: string }> = [
+  { id: 'select', label: 'Select', key: 'V' },
+  { id: 'room', label: 'Room', key: 'R' },
+  { id: 'wall', label: 'Wall', key: 'W' },
+  { id: 'door', label: 'Door', key: 'D' },
+  { id: 'window', label: 'Window', key: 'N' },
+  { id: 'opening', label: 'Doorway', key: 'O' },
+  { id: 'measure', label: 'Measure', key: 'M' }
+]
+const KEY_TOOLS: Record<string, Tool> = { v: 'select', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
+const HINTS: Record<Tool, string> = {
+  select: 'Click to select · drag to move · Shift-click / drag a box for several · handles rotate & scale · Alt = no snapping',
+  room: 'Drag a rectangle to create a room (walls + floor). Rooms drawn against each other share a wall.',
+  wall: 'Click to place a 3 m wall, then drag its round ends to lengthen/turn it and the square handle to thicken it.',
+  door: 'Hover a wall and click to add a door. Double-click a door to open/close it.',
+  window: 'Hover a wall and click to add a window.',
+  opening: 'Hover a wall and click to add a doorway (an opening with no door).',
+  measure: 'Drag between two points to measure. Snaps to wall ends and corners.'
 }
-
-const rectPath = (x: number, y: number, w: number, h: number) => `M ${x} ${y} h ${w} v ${h} h ${-w} Z`
-const circlePath = (r: number) => `M ${-r} 0 a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0`
-
-// Top-down outline of the fixture at true size. The emitting face is at y = 0 facing up (-y);
-// housings extend behind it (+y).
-function fixtureParts(light: ResolvedLight, orientation: LightItem['props']['orientation']): LightVisual['parts'] {
-  const { shape, w, depth } = light.emitter
-  const parts: LightVisual['parts'] = []
-  const face = (width: number) => parts.push({ d: rectPath(-width / 2, -0.035, width, 0.035), glow: true })
-  switch (shape) {
-    case 'rect':
-      if (light.fixture.shape.type === 'rect' && light.modifier.kind !== 'panel-softbox') {
-        parts.push({ d: rectPath(-w / 2, 0, w, Math.max(depth, 0.05)), glow: false })
-      } else {
-        const back = Math.min(0.2, w)
-        parts.push({ d: `M ${-w / 2} 0 L ${w / 2} 0 L ${back / 2} ${depth} L ${-back / 2} ${depth} Z`, glow: false })
-      }
-      face(w)
-      break
-    case 'octa':
-    case 'dish':
-    case 'reflector': {
-      const back = Math.min(0.15, w)
-      parts.push({ d: `M ${-w / 2} 0 L ${w / 2} 0 L ${back / 2} ${depth} L ${-back / 2} ${depth} Z`, glow: false })
-      face(w)
-      break
-    }
-    case 'sphere':
-      parts.push({ d: circlePath(w / 2), glow: true })
-      break
-    case 'lens':
-      parts.push({ d: rectPath(-w / 2, 0, w, depth), glow: false })
-      face(w * 0.8)
-      break
-    case 'cob':
-      face(0.1)
-      break
-    case 'tube':
-      parts.push({ d: orientation === 'vertical' ? circlePath(0.045) : rectPath(-w / 2, -0.025, w, 0.05), glow: true })
-      break
-    case 'bulb':
-      parts.push({ d: circlePath(0.05), glow: true })
-      break
-  }
-  if (light.fixture.shape.type === 'cob') {
-    const size = light.fixture.shape.size
-    const offset = shape === 'sphere' ? w / 2 : depth
-    parts.push({ d: rectPath(-size * 0.4, offset, size * 0.8, size), glow: false })
-  }
-  return parts
-}
-
-type Drag = { mode: 'move' | 'rotate'; id: string; offsetX: number; offsetZ: number }
+const SNAP_PX = 10
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { CameraProperties, LightLibrary, LightProperties },
+  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary },
   props: {
     active: { type: Boolean, default: true }
   },
   setup(props) {
     const svg = ref<SVGSVGElement | null>(null)
-    const room = computed(() => scene.room)
-    const items = computed(() => scene.items)
-    const selectedId = computed(() => scene.selectedId)
-    const selected = computed(() => getItem(scene.selectedId))
-
-    const bounds = computed(() => ({
-      minX: -room.value.width / 2 - MARGIN,
-      maxX: room.value.width / 2 + MARGIN,
-      minY: -room.value.depth / 2 - MARGIN,
-      maxY: room.value.depth / 2 + MARGIN
-    }))
-    const viewBox = computed(() => {
-      const b = bounds.value
-      return `${b.minX} ${b.minY} ${b.maxX - b.minX} ${b.maxY - b.minY}`
-    })
-
-    const range = (min: number, max: number) => {
-      const lines: number[] = []
-      for (let v = Math.ceil(min * 2) / 2; v <= max; v += 0.5) lines.push(round(v))
-      return lines
-    }
-    const gridX = computed(() => range(bounds.value.minX, bounds.value.maxX))
-    const gridY = computed(() => range(bounds.value.minY, bounds.value.maxY))
-    const isMajor = (v: number) => Number.isInteger(v)
-
-    // Wedge pointing "up" (-y) with the given full angle in degrees.
-    const wedge = (angle: number, length: number) => {
-      const half = (Math.min(angle, 179) / 2) * Math.PI / 180
-      const x = Math.sin(half) * length
-      const y = -Math.cos(half) * length
-      return `M 0 0 L ${x} ${y} A ${length} ${length} 0 0 0 ${-x} ${y} Z`
-    }
-    const cameraList = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
-
-    // Annular sector facing up between radii r1 and r2 over the full angle (deg).
-    const band = (angle: number, r1: number, r2: number) => {
-      const h = (angle / 2) * Math.PI / 180
-      const pt = (r: number, a: number) => `${r * Math.sin(a)} ${-r * Math.cos(a)}`
-      return `M ${pt(r1, -h)} A ${r1} ${r1} 0 0 1 ${pt(r1, h)} L ${pt(r2, h)} A ${r2} ${r2} 0 0 0 ${pt(r2, -h)} Z`
-    }
-    const arc = (angle: number, r: number) => {
-      const h = (angle / 2) * Math.PI / 180
-      return `M ${r * Math.sin(-h)} ${-r * Math.cos(-h)} A ${r} ${r} 0 0 1 ${r * Math.sin(h)} ${-r * Math.cos(h)}`
-    }
-
-    // Camera footprint on the plan: true horizontal FOV, focus distance and depth of field
-    // (distances along the lens axis, projected onto the floor).
-    const camViews = computed(() => {
-      const result: Record<string, { fov: number; length: number; lensMm: number; focusPath: string; dofPath: string }> = {}
-      cameraList.value.forEach(cam => {
-        const fov = horizontalFov(cam.props) * 180 / Math.PI
-        const flat = Math.cos(cam.props.tilt * Math.PI / 180)
-        const focus = focusDistance(cam, scene)
-        const { near, far } = dofLimits(cam.props, focus)
-        const length = Math.min(9, Math.max(3, focus * flat * 1.8))
-        result[cam.id] = {
-          fov,
-          length,
-          lensMm: getLens(cam.props.lensId).focalLength,
-          focusPath: arc(fov, focus * flat),
-          dofPath: band(fov, Math.max(near * flat, 0.05), Math.min(far * flat, length))
-        }
-      })
-      return result
-    })
-
-    const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))
-
-    const visuals = computed(() => {
-      const result: Record<string, LightVisual> = {}
-      lights.value.forEach(item => {
-        const light = resolveLight(item)
-        result[item.id] = {
-          omni: light.omni,
-          hard: light.hardEdge,
-          beam: light.beam,
-          // Beam drawn out to where it falls to ~400 lux.
-          throw: Math.min(Math.max(Math.sqrt(light.candela / 400), 0.6), 6),
-          hex: light.colourHex,
-          parts: fixtureParts(light, item.props.orientation)
-        }
-      })
-      return result
-    })
-
-    const meter = computed(() => {
-      const subject = selected.value
-      const cam = activeCamera()
-      if (!subject || subject.kind !== 'subject' || !cam) return null
-      const exposure = cam.props
-      const point = subjectMeterPoint(subject)
-      const rows = lights.value
-        .map(item => ({ id: item.id, name: item.name, hex: resolveLight(item).colourHex, lux: Math.round(illuminanceAt(item, point)) }))
-        .sort((a, b) => b.lux - a.lux)
-      const bounce = sceneBounce()
-      if (bounce.lux >= 1) rows.push({ id: 'bounce', name: 'Room bounce (est.)', hex: '#8b8f99', lux: Math.round(bounce.lux) })
-      const total = rows.reduce((sum, row) => sum + row.lux, 0)
-      const over = stopsOver(total, exposure)
-      const verdict = !isFinite(over) || over < -1 ? 'under' : over > 1 ? 'over' : 'good'
-      const vsText = !isFinite(over)
-        ? 'No direct light on the face'
-        : Math.abs(over) < 0.17 ? `Exposed right at T${exposure.tStop}`
-          : `${over > 0 ? '+' : '−'}${Math.abs(over).toFixed(1)} stops ${over > 0 ? 'over' : 'under'} at T${exposure.tStop}`
-      const filters = [exposure.nd.fitted ? ` · ND ${exposure.nd.stops.toFixed(1)}` : '', exposure.polarizer.fitted ? ' · POL' : ''].join('')
-      return { rows, total, stop: nearestStop(tStopFor(total, exposure)), verdict, vsText, cam: exposure, shutter: formatShutter(exposure), filters }
-    })
-
+    const area = ref<HTMLDivElement | null>(null)
     const showLibrary = ref(false)
-    const addLight = (fixtureId: string) => {
-      addItem('light', fixtureId)
-      showLibrary.value = false
-    }
+    const panning = ref(false)
+    let spaceHeld = false
+    let gesture: Gesture | null = null
+    // What was under the pointer on the last press (pointer capture retargets dblclick to the svg).
+    let lastDownId: string | null = null
+    const marquee = ref<{ a: Pt; b: Pt } | null>(null)
 
-    const toWorld = (event: PointerEvent) => {
+    // ── Viewport ──────────────────────────────────────────────────────────
+    const px = computed(() => 1 / editor.view.scale)
+    const viewBox = computed(() => {
+      const { cx, cz, scale } = editor.view
+      const w = editor.size.w / scale
+      const h = editor.size.h / scale
+      return `${cx - w / 2} ${-cz - h / 2} ${w} ${h}`
+    })
+    const grid = computed(() => {
+      const { cx, cz, scale } = editor.view
+      const w = editor.size.w / scale
+      const h = editor.size.h / scale
+      const steps = [0.1, 0.25, 0.5, 1, 2, 5, 10, 25, 50, 100]
+      const minor = steps.find(s => s * scale >= 12) ?? 100
+      const major = minor < 1 ? 1 : minor * 5
+      const x0 = cx - w / 2
+      const x1 = cx + w / 2
+      const y0 = -cz - h / 2
+      const y1 = -cz + h / 2
+      const lines: Array<{ k: string; x1: number; y1: number; x2: number; y2: number; major: boolean }> = []
+      for (let x = Math.ceil(x0 / minor) * minor; x <= x1 && lines.length < 600; x += minor) {
+        const r = round3(x)
+        lines.push({ k: `x${r}`, x1: r, y1: y0, x2: r, y2: y1, major: Math.abs(r / major - Math.round(r / major)) < 1e-6 })
+      }
+      for (let y = Math.ceil(y0 / minor) * minor; y <= y1 && lines.length < 1200; y += minor) {
+        const r = round3(y)
+        lines.push({ k: `y${r}`, x1: x0, y1: r, x2: x1, y2: r, major: Math.abs(r / major - Math.round(r / major)) < 1e-6 })
+      }
+      return { lines }
+    })
+    const scaleBar = computed(() => {
+      const options = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100]
+      const L = options.find(v => v * editor.view.scale >= 70) ?? 100
+      return { px: L * editor.view.scale, label: L < 1 ? `${Math.round(L * 100)} cm` : `${L} m` }
+    })
+
+    const toWorld = (event: { clientX: number; clientY: number }): Pt => {
       const el = svg.value as SVGSVGElement
       const point = el.createSVGPoint()
       point.x = event.clientX
@@ -335,157 +196,482 @@ export default defineComponent({
       return { x: local.x, z: -local.y }
     }
 
-    let drag: Drag | null = null
+    const fit = () => {
+      const pts: Pt[] = [...scene.walls.flatMap(w => [w.a, w.b]), ...scene.rooms.flatMap(r => r.points), ...scene.items.map(i => ({ x: i.x, z: i.z }))]
+      const b = boundsOf(pts)
+      if (!b) return
+      // Leave room for the toolbar across the top.
+      const top = 110
+      const w = Math.max(b.maxX - b.minX, 1) + 1.5
+      const d = Math.max(b.maxZ - b.minZ, 1) + 1.5
+      editor.view.scale = Math.min(editor.size.w / w, (editor.size.h - top) / d, 400)
+      editor.view.cx = (b.minX + b.maxX) / 2
+      editor.view.cz = (b.minZ + b.maxZ) / 2 + top / 2 / editor.view.scale
+    }
 
-    const startMove = (event: PointerEvent, item: SceneItem) => {
-      select(item.id)
+    const onWheel = (event: WheelEvent) => {
+      const before = toWorld(event)
+      const factor = Math.exp(-event.deltaY * (event.ctrlKey ? 0.01 : 0.0015))
+      editor.view.scale = Math.min(800, Math.max(4, editor.view.scale * factor))
+      // Keep the point under the cursor fixed.
+      const after = toWorld(event)
+      editor.view.cx += before.x - after.x
+      editor.view.cz += before.z - after.z
+    }
+
+    // ── Snapping ──────────────────────────────────────────────────────────
+    const snapPoint = (p: Pt, opts: { exclude?: Set<string>; from?: Pt; free?: boolean; coarseAngle?: boolean } = {}): Pt => {
+      editor.snapPoint = null
+      if (opts.free) return p
+      if (editor.snap.objects) {
+        const hit = nearestPoint(p, snapCandidates(opts.exclude), SNAP_PX * px.value)
+        if (hit) {
+          editor.snapPoint = hit
+          return { ...hit }
+        }
+      }
+      let q = p
+      if (opts.from) {
+        q = snapAngle(opts.from, p, opts.coarseAngle ? 45 : editor.snap.angle)
+        if (editor.snap.grid) {
+          const L = Math.round(dist(opts.from, q) / editor.snap.gridSize) * editor.snap.gridSize
+          const d = dist(opts.from, q) || 1
+          q = { x: opts.from.x + ((q.x - opts.from.x) / d) * L, z: opts.from.z + ((q.z - opts.from.z) / d) * L }
+        }
+        return { x: round3(q.x), z: round3(q.z) }
+      }
+      return editor.snap.grid ? snapToGrid(q, editor.snap.gridSize) : q
+    }
+
+    // Snap a move delta: pull a moved corner onto a nearby wall end/corner, else round to the grid.
+    const snapDelta = (session: TransformSession, delta: Pt, free: boolean): Pt => {
+      editor.snapPoint = null
+      if (free) return delta
+      if (editor.snap.objects) {
+        const exclude = new Set(session.ids)
+        const cands = snapCandidates(exclude)
+        let best: { d: number; adjust: Pt; at: Pt } | null = null
+        const origins: Pt[] = []
+        session.walls.forEach(w => origins.push(w.a, w.b))
+        session.rooms.forEach(pts => origins.push(...pts))
+        origins.forEach(o => {
+          const moved = addPt(o, delta)
+          const hit = nearestPoint(moved, cands, SNAP_PX * px.value)
+          if (hit) {
+            const d = dist(moved, hit)
+            if (!best || d < best.d) best = { d, adjust: sub(hit, moved), at: hit }
+          }
+        })
+        if (best) {
+          const b = best as { d: number; adjust: Pt; at: Pt }
+          editor.snapPoint = b.at
+          return addPt(delta, b.adjust)
+        }
+      }
+      if (!editor.snap.grid) return delta
+      const g = editor.snap.gridSize
+      return { x: Math.round(delta.x / g) * g, z: Math.round(delta.z / g) * g }
+    }
+
+    // ── Tools & pointer ───────────────────────────────────────────────────
+    const setTool = (tool: Tool) => {
+      editor.tool = tool
+      editor.openingPreview = null
+      editor.draft = null
+      editor.snapPoint = null
+      if (tool !== 'measure') editor.measure = null
+    }
+
+    const entitiesIn = (a: Pt, b: Pt): string[] => {
+      const minX = Math.min(a.x, b.x)
+      const maxX = Math.max(a.x, b.x)
+      const minZ = Math.min(a.z, b.z)
+      const maxZ = Math.max(a.z, b.z)
+      const inside = (p: Pt) => p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ
+      const all = [...scene.walls, ...scene.openings, ...scene.rooms, ...scene.items].map(e => e.id)
+      return all.filter(id => {
+        const pts = selectionPoints([id])
+        return pts.length > 0 && pts.every(inside)
+      })
+    }
+
+    const onDown = (event: PointerEvent) => {
+      const el = svg.value as SVGSVGElement
+      el.setPointerCapture(event.pointerId)
       const p = toWorld(event)
-      drag = { mode: 'move', id: item.id, offsetX: item.x - p.x, offsetZ: item.z - p.z }
-      svg.value?.setPointerCapture(event.pointerId)
+      if (event.button === 1 || event.button === 2 || spaceHeld) {
+        gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz }
+        panning.value = true
+        return
+      }
+      const target = event.target as Element
+      const handle = target.closest('[data-handle]')?.getAttribute('data-handle')
+      const id = target.closest('[data-id]')?.getAttribute('data-id') ?? null
+      lastDownId = id
+      const free = event.altKey
+
+      switch (editor.tool) {
+        case 'wall': {
+          addWallAt(snapPoint(p, { free }))
+          setTool('select')
+          return
+        }
+        case 'room':
+          gesture = { type: 'room', a: snapPoint(p, { free }) }
+          editor.draft = { a: gesture.a, b: gesture.a }
+          return
+        case 'measure': {
+          const a = snapPoint(p, { free })
+          editor.measure = { a, b: a, done: false }
+          gesture = { type: 'measure' }
+          return
+        }
+        case 'door':
+        case 'window':
+        case 'opening': {
+          const prev = editor.openingPreview
+          if (prev && prev.fits) {
+            addOpening(prev.kind, prev.wallId, prev.offset)
+            setTool('select')
+          }
+          return
+        }
+      }
+
+      // Select tool.
+      if (handle) {
+        const ids = expandSelection(editor.selection)
+        const b = selectionBounds(ids)
+        if (handle === 'rotate' && b) {
+          const pivot = { x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2 }
+          gesture = { type: 'rotate', pivot, start: Math.atan2(p.x - pivot.x, p.z - pivot.z), session: beginTransform(ids) }
+        } else if (handle.startsWith('scale-') && b) {
+          const h = handle.slice(6)
+          const ax = h.includes('w') ? b.maxX : h.includes('e') ? b.minX : (b.minX + b.maxX) / 2
+          const az = h.includes('n') ? b.minZ : h.includes('s') ? b.maxZ : (b.minZ + b.maxZ) / 2
+          const rx = h.includes('w') ? b.minX : h.includes('e') ? b.maxX : ax
+          const rz = h.includes('n') ? b.maxZ : h.includes('s') ? b.minZ : az
+          gesture = { type: 'scale', handle: h, anchor: { x: ax, z: az }, ref: { x: rx, z: rz }, session: beginTransform(ids), w: b.maxX - b.minX, d: b.maxZ - b.minZ }
+        } else if (handle === 'wall-a' || handle === 'wall-b') {
+          const wall = getWall(editor.selection[0])
+          if (wall) {
+            const end = handle === 'wall-a' ? 'a' : 'b'
+            gesture = { type: 'wallEnd', wall, fixed: { ...(end === 'a' ? wall.b : wall.a) }, session: beginEndpointDrag(wall, end) }
+          }
+        } else if (handle === 'wall-thick') {
+          const wall = getWall(editor.selection[0])
+          if (wall) gesture = { type: 'wallThick', wall }
+        } else if (handle === 'aim') {
+          const item = getItem(target.closest('[data-for]')?.getAttribute('data-for') ?? null)
+          if (item) gesture = { type: 'aim', item }
+        }
+        if (gesture) editor.dragging = true
+        return
+      }
+      if (id) {
+        if (event.shiftKey) {
+          toggleSelection(id)
+          return
+        }
+        const clickId = isSelected(id) ? id : null
+        if (!isSelected(id)) setSelection([id])
+        gesture = { type: 'move', start: p, ids: expandSelection(editor.selection), session: null, clickId }
+        return
+      }
+      if (!event.shiftKey) clearSelection()
+      gesture = { type: 'marquee', a: p, b: p, additive: event.shiftKey }
+      marquee.value = { a: p, b: p }
     }
 
-    const startRotate = (event: PointerEvent, item: SceneItem) => {
-      drag = { mode: 'rotate', id: item.id, offsetX: 0, offsetZ: 0 }
-      svg.value?.setPointerCapture(event.pointerId)
-    }
-
-    const onPointerMove = (event: PointerEvent) => {
-      if (!drag) return
-      const item = getItem(drag.id)
-      if (!item) return
+    const onMove = (event: PointerEvent) => {
       const p = toWorld(event)
       const free = event.altKey
-      if (drag.mode === 'move') {
-        const b = bounds.value
-        const x = Math.min(Math.max(p.x + drag.offsetX, b.minX), b.maxX)
-        const z = Math.min(Math.max(p.z + drag.offsetZ, -b.maxY), -b.minY)
-        item.x = round(free ? x : snap(x, MOVE_SNAP))
-        item.z = round(free ? z : snap(z, MOVE_SNAP))
-      } else {
-        const angle = Math.atan2(p.x - item.x, p.z - item.z) * 180 / Math.PI
-        const normalised = (angle + 360) % 360
-        item.rotationY = Math.round(free ? normalised : snap(normalised, ROTATE_SNAP) % 360)
+      if (!gesture) {
+        // Hover feedback for the placing tools.
+        const kind = OPENING_TOOLS[editor.tool]
+        if (kind) {
+          const near = nearestWall(p, 0.5)
+          if (near) {
+            const width = openingDefaults(kind).width
+            const offset = clampOffset(near.wall, near.along, width)
+            editor.openingPreview = { wallId: near.wall.id, offset, kind, fits: openingFits(near.wall, offset, width) }
+          } else editor.openingPreview = null
+        } else if (editor.tool === 'wall' || editor.tool === 'room' || editor.tool === 'measure') {
+          snapPoint(p, { free })
+        }
+        return
+      }
+      switch (gesture.type) {
+        case 'pan': {
+          const g = gesture
+          editor.view.cx = g.cx - (event.clientX - g.sx) / editor.view.scale
+          editor.view.cz = g.cz + (event.clientY - g.sy) / editor.view.scale
+          break
+        }
+        case 'move': {
+          const g = gesture
+          const raw = sub(p, g.start)
+          if (!g.session) {
+            if (Math.hypot(raw.x, raw.z) * editor.view.scale < 3) return
+            g.session = beginTransform(g.ids)
+            editor.dragging = true
+          }
+          const delta = snapDelta(g.session, raw, free)
+          applyTransform(g.session, translate(delta))
+          slideOpenings(g.session, delta)
+          editor.hud = { at: p, text: `Δ ${delta.x.toFixed(2)}, ${delta.z.toFixed(2)} m` }
+          break
+        }
+        case 'marquee':
+          gesture.b = p
+          marquee.value = { a: gesture.a, b: p }
+          break
+        case 'rotate': {
+          const g = gesture
+          let deg = ((Math.atan2(p.x - g.pivot.x, p.z - g.pivot.z) - g.start) * 180) / Math.PI
+          deg = ((deg + 540) % 360) - 180
+          if (!event.shiftKey) deg = Math.round(deg / 15) * 15
+          applyTransform(g.session, rotateAbout(g.pivot, deg), deg)
+          editor.hud = { at: p, text: `${deg > 0 ? '+' : ''}${Math.round(deg)}°` }
+          break
+        }
+        case 'scale': {
+          const g = gesture
+          const h = g.handle
+          const grid = editor.snap.grid && !free ? editor.snap.gridSize : 0
+          const size = (v: number) => (grid ? Math.max(grid, Math.round(v / grid) * grid) : Math.max(0.05, v))
+          let sx = 1
+          let sz = 1
+          if (h.includes('e') || h.includes('w')) sx = size(Math.abs(p.x - g.anchor.x)) / Math.max(Math.abs(g.ref.x - g.anchor.x), 0.01)
+          if (h.includes('n') || h.includes('s')) sz = size(Math.abs(p.z - g.anchor.z)) / Math.max(Math.abs(g.ref.z - g.anchor.z), 0.01)
+          if (event.shiftKey && h.length === 2) { const u = Math.max(sx, sz); sx = u; sz = u }
+          applyTransform(g.session, scaleAbout(g.anchor, sx, sz))
+          editor.hud = { at: p, text: `${(g.w * sx).toFixed(2)} × ${(g.d * sz).toFixed(2)} m` }
+          break
+        }
+        case 'wallEnd': {
+          const g = gesture
+          const q = snapPoint(p, { exclude: new Set([g.wall.id]), from: g.fixed, free, coarseAngle: event.shiftKey })
+          moveEndpoint(g.session, q)
+          editor.hud = { at: p, text: `${dist(g.fixed, q).toFixed(2)} m` }
+          break
+        }
+        case 'wallThick': {
+          const w = gesture.wall
+          const off = Math.abs(projectOnWall(w, p).offset) - 16 * px.value
+          w.thickness = Math.min(1, Math.max(0.03, Math.round(off * 2 * 100) / 100))
+          editor.hud = { at: p, text: `${Math.round(w.thickness * 100)} cm thick` }
+          break
+        }
+        case 'aim': {
+          const item = gesture.item
+          const angle = ((Math.atan2(p.x - item.x, p.z - item.z) * 180) / Math.PI + 360) % 360
+          item.rotationY = Math.round(free ? angle : (Math.round(angle / 5) * 5) % 360)
+          editor.hud = { at: p, text: `${item.rotationY}°` }
+          break
+        }
+        case 'room': {
+          const b = snapPoint(p, { free })
+          editor.draft = { a: gesture.a, b }
+          editor.hud = { at: p, text: `${Math.abs(b.x - gesture.a.x).toFixed(2)} × ${Math.abs(b.z - gesture.a.z).toFixed(2)} m` }
+          break
+        }
+        case 'measure':
+          if (editor.measure) editor.measure.b = snapPoint(p, { free })
+          break
       }
     }
 
-    const endDrag = () => { drag = null }
+    const onUp = () => {
+      const g = gesture
+      gesture = null
+      panning.value = false
+      if (g?.type === 'move' && !g.session && g.clickId && editor.selection.length > 1) setSelection([g.clickId])
+      if (g?.type === 'marquee') {
+        const found = entitiesIn(g.a, g.b)
+        setSelection(g.additive ? Array.from(new Set([...editor.selection, ...found])) : found)
+      }
+      if (g?.type === 'room' && editor.draft) {
+        addRoomRect(editor.draft.a, editor.draft.b)
+        editor.draft = null
+        setTool('select')
+      }
+      if (g?.type === 'measure' && editor.measure) editor.measure.done = true
+      marquee.value = null
+      editor.hud = null
+      editor.snapPoint = null
+      editor.dragging = false
+    }
 
-    const add = (kind: ItemKind) => addItem(kind)
-    const remove = (id: string) => removeItem(id)
+    const onDouble = () => {
+      const e = getEntity(lastDownId)
+      if (e?.kind === 'opening') toggleDoor(e.obj)
+    }
 
+    const marqueeRect = computed(() => {
+      const m = marquee.value
+      if (!m) return null
+      return { x: Math.min(m.a.x, m.b.x), y: -Math.max(m.a.z, m.b.z), w: Math.abs(m.b.x - m.a.x), h: Math.abs(m.b.z - m.a.z) }
+    })
+
+    // ── Panels ────────────────────────────────────────────────────────────
+    const panel = computed(() => {
+      const sel = editor.selection
+      if (!sel.length) return null
+      if (sel.length > 1) return 'selection'
+      const e = getEntity(sel[0])
+      if (!e) return null
+      return e.kind === 'item' ? 'item' : e.kind === 'wall' ? 'wall' : e.kind === 'opening' ? 'opening' : 'selection'
+    })
+    const hint = computed(() => HINTS[editor.tool])
+
+    // ── Adding items ──────────────────────────────────────────────────────
+    const placeInView = (item: SceneItem) => {
+      item.x = round3(editor.view.cx)
+      item.z = round3(editor.view.cz - 1)
+      setSelection([item.id])
+    }
+    const add = (kind: ItemKind) => placeInView(addItem(kind))
+    const addLight = (fixtureId: string) => {
+      placeInView(addItem('light', fixtureId))
+      showLibrary.value = false
+    }
+
+    // ── Keyboard ──────────────────────────────────────────────────────────
     const onKey = (event: KeyboardEvent) => {
-      if (!props.active || !scene.selectedId) return
+      if (!props.active) return
       const target = event.target as HTMLElement
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        removeItem(scene.selectedId)
-        event.preventDefault()
+      const mod = event.metaKey || event.ctrlKey
+      const key = event.key.toLowerCase()
+      if (key === ' ') { spaceHeld = true; event.preventDefault(); return }
+      if (mod && key === 'z') { if (event.shiftKey) redo(); else undo(); event.preventDefault(); return }
+      if (mod && key === 'y') { redo(); event.preventDefault(); return }
+      if (mod && key === 'd') { duplicateSelection(editor.selection); event.preventDefault(); return }
+      if (mod && key === 'c') { copySelection(editor.selection); return }
+      if (mod && key === 'v') { pasteClipboard(); event.preventDefault(); return }
+      if (mod && key === 'a') { setSelection([...scene.rooms, ...scene.walls, ...scene.openings, ...scene.items].map(e => e.id)); event.preventDefault(); return }
+      if (mod) return
+      if (key === 'escape') {
+        setTool('select')
+        editor.measure = null
+        clearSelection()
+        return
       }
+      if (key === 'delete' || key === 'backspace') {
+        if (editor.selection.length) deleteIds(editor.selection)
+        event.preventDefault()
+        return
+      }
+      if (key.startsWith('arrow') && editor.selection.length) {
+        const step = event.altKey && event.shiftKey ? 1 : event.shiftKey ? 0.1 : 0.01
+        const d = { x: key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0, z: key === 'arrowup' ? step : key === 'arrowdown' ? -step : 0 }
+        nudgeSelection(expandSelection(editor.selection), d)
+        event.preventDefault()
+        return
+      }
+      if (key === 'f') { fit(); return }
+      const tool = KEY_TOOLS[key]
+      if (tool) setTool(tool)
     }
-    onMounted(() => window.addEventListener('keydown', onKey))
-    onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+    const onKeyUp = (event: KeyboardEvent) => { if (event.key === ' ') spaceHeld = false }
+
+    let resizeObserver: ResizeObserver | null = null
+    onMounted(() => {
+      window.addEventListener('keydown', onKey)
+      window.addEventListener('keyup', onKeyUp)
+      // Track the canvas size; ignore zero sizes (hidden view) and fit once a real size is known.
+      let fitted = false
+      resizeObserver = new ResizeObserver(() => {
+        const el = svg.value
+        if (!el || !el.clientWidth || !el.clientHeight) return
+        editor.size.w = el.clientWidth
+        editor.size.h = el.clientHeight
+        if (!fitted) {
+          fitted = true
+          fit()
+        }
+      })
+      if (svg.value) resizeObserver.observe(svg.value)
+      startHistory()
+    })
+    onBeforeUnmount(() => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+      resizeObserver?.disconnect()
+    })
 
     return {
-      svg, room, items, selectedId, selected, bounds, viewBox, gridX, gridY, isMajor,
-      wedge, camViews, cameraList, scene, visuals, meter, showLibrary, addLight, tStops: T_STOPS, startMove, startRotate, onPointerMove, endDrag, add, remove, select,
-      kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera' },
-      isos: getBody('fx3').isos
+      svg, area, editor, tools: TOOLS, setTool, showLibrary, add, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
+      onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
     }
   }
 })
 </script>
 
 <style scoped>
-.plan {
-  display: flex;
-  width: 100%;
-  height: 100%;
-}
-.canvas-area {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
+.plan { display: flex; width: 100%; height: 100%; }
+.canvas-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .toolbar {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  display: flex;
-  gap: 8px;
+  position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 10px; z-index: 4; pointer-events: none;
 }
-svg {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  background: #15161a;
-  user-select: none;
-  touch-action: none;
+.toolbar .group {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: rgba(23, 24, 28, 0.92); border: 1px solid var(--line); border-radius: 8px; pointer-events: auto;
 }
-.hint {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--muted);
-  border-top: 1px solid var(--line);
+.toolbar button { border: none; background: transparent; padding: 5px 9px; font-size: 13px; display: flex; align-items: center; gap: 5px; }
+.toolbar button:hover { background: #2c2f37; }
+.toolbar button.on { background: var(--accent); color: #1a1a1a; }
+.toolbar kbd { font-family: inherit; font-size: 10px; opacity: 0.55; }
+.canvas { flex: 1; width: 100%; min-height: 0; background: #15161a; user-select: none; touch-action: none; }
+.canvas.tool-select { cursor: default; }
+.canvas.tool-wall, .canvas.tool-room, .canvas.tool-measure { cursor: crosshair; }
+.canvas.tool-door, .canvas.tool-window, .canvas.tool-opening { cursor: copy; }
+.canvas.panning { cursor: grabbing; }
+.grid line { stroke: #22242b; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.grid line.major { stroke: #2f323b; }
+.scalebar {
+  position: absolute; left: 14px; bottom: 44px; height: 6px; border: 1px solid #8b8f99; border-top: none; pointer-events: none;
 }
-
-.grid line { stroke: #22242b; stroke-width: 0.01; }
-.grid line.major { stroke: #2d3039; stroke-width: 0.015; }
-.room { fill: #1c1e24; stroke: #c9ccd4; stroke-width: 0.05; }
-.dim { fill: var(--muted); font-size: 0.18px; }
-.label { fill: #d7d9de; font-size: 0.16px; }
-
-.item .body { cursor: grab; stroke: #0d0e11; stroke-width: 0.02; }
-.item.selected .body { stroke: var(--accent); stroke-width: 0.04; }
-.subject .body { fill: #c89f82; }
-.subject .nose { fill: #c89f82; }
-.light .beam { opacity: 0.12; stroke: none; }
-.light .beam.hard { opacity: 0.2; stroke-width: 0.02; stroke-opacity: 0.8; }
-.light .fixture { cursor: grab; }
-.light .fixture .hit { fill: transparent; }
-.light .fixture .body { fill: #3a3d46; stroke: #0d0e11; stroke-width: 0.015; }
-.light .fixture .glow { stroke: #0d0e11; stroke-width: 0.01; }
-.light.selected .fixture .body { stroke: var(--accent); stroke-width: 0.03; }
-.toolbar button.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; }
-.section { margin-top: 8px !important; padding-top: 12px; border-top: 1px solid var(--line); }
-.meter-total { display: flex; flex-direction: column; gap: 2px; }
-.meter-total strong { font-size: 20px; }
-.meter-total span, .meter-row span { color: var(--muted); }
-.meter-vs { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #23252c; }
-.meter-vs.good { color: #8fdc8f; }
-.meter-vs.over { color: #ffb547; }
-.meter-vs.under { color: #7fb2ff; }
-.meter-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.meter-row span { margin-left: auto; }
-.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
-.exposure { display: flex; gap: 8px; }
-.exposure label { flex: 1; }
-.camera .body, .camera .lens { fill: #8a8f9c; cursor: grab; }
-.camera .dof { fill: rgba(120, 170, 255, 0.13); }
-.camera .focus-arc { fill: none; stroke: #ffb547; stroke-width: 0.025; }
-.tilt-label { fill: var(--muted); font-size: 0.13px; }
-.camera .fov { fill: rgba(120, 170, 255, 0.07); stroke: rgba(120, 170, 255, 0.6); stroke-width: 0.015; stroke-dasharray: 0.08 0.06; }
-.rotate-handle line { stroke: var(--accent); stroke-width: 0.02; }
-.rotate-handle circle { fill: var(--accent); cursor: crosshair; }
-
+.scalebar span { position: absolute; left: 0; bottom: 8px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hint { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
 .panel {
-  width: 260px;
-  flex-shrink: 0;
-  padding: 16px;
-  border-left: 1px solid var(--line);
-  background: var(--panel);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  font-size: 13px;
+  width: 280px; flex-shrink: 0; padding: 16px; border-left: 1px solid var(--line); background: var(--panel);
+  overflow-y: auto; font-size: 13px;
 }
-.panel h4 { margin: 0; font-size: 14px; }
-.panel label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
-.panel label span { color: var(--text); }
-.panel input:not([type='range']):not([type='color']), .panel select { width: 100%; box-sizing: border-box; }
-.readout { color: var(--muted); font-variant-numeric: tabular-nums; }
-.empty { color: var(--muted); }
-.danger { margin-top: 8px; color: #ff8a80; }
+</style>
+
+<style>
+/* Shared styles for the plan's property panels (child components). */
+.plan-panel .panel-body { display: flex; flex-direction: column; gap: 12px; }
+.plan-panel h4 { margin: 0; font-size: 14px; }
+.plan-panel label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.plan-panel label > span { color: var(--text); }
+.plan-panel label.check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+.plan-panel input:not([type='range']):not([type='color']):not([type='checkbox']), .plan-panel select { width: 100%; box-sizing: border-box; }
+.plan-panel .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.plan-panel .field { display: flex; flex-direction: column; gap: 6px; }
+.plan-panel .field.centred { align-items: center; }
+.plan-panel .caption { color: var(--muted); align-self: flex-start; }
+.plan-panel .angle-row { display: flex; align-items: center; gap: 12px; }
+.plan-panel .rot-buttons { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.plan-panel .actions { display: flex; gap: 8px; }
+.plan-panel .actions button { flex: 1; }
+.plan-panel .modes { display: flex; gap: 4px; }
+.plan-panel .modes button { flex: 1; font-size: 12px; }
+.plan-panel .modes button.on, .plan-panel .toggle.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; }
+.plan-panel .readout { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0; }
+.plan-panel .section { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.plan-panel .danger { color: #ff8a80; }
+.plan-panel .meter-total { display: flex; flex-direction: column; gap: 2px; }
+.plan-panel .meter-total strong { font-size: 20px; }
+.plan-panel .meter-total span, .plan-panel .meter-row span { color: var(--muted); }
+.plan-panel .meter-vs { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #23252c; }
+.plan-panel .meter-vs.good { color: #8fdc8f; }
+.plan-panel .meter-vs.over { color: #ffb547; }
+.plan-panel .meter-vs.under { color: #7fb2ff; }
+.plan-panel .meter-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.plan-panel .meter-row span { margin-left: auto; }
+.plan-panel .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.plan-panel .exposure { display: flex; gap: 8px; }
+.plan-panel .exposure label { flex: 1; }
 </style>

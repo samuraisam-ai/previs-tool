@@ -11,6 +11,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   PointLight,
+  RenderTargetTexture,
   Scene,
   ShadowGenerator,
   ShaderMaterial,
@@ -26,7 +27,8 @@ import { kelvinToSrgb, luminance, RGB, srgbToLinear } from '../library/colour'
 import { getLens } from '../library/lenses'
 import { focusDistance, horizontalFov, imageWidthMm, keyLux } from '../library/optics'
 import { headingDirection, ResolvedLight, resolveLight } from '../library/photometry'
-import { CameraItem, CameraProps, LightItem, Room, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
+import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
+import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 
@@ -91,12 +93,10 @@ export class LiveScene {
   private orbitCamera: ArcRotateCamera
   private ambient: HemisphericLight
   private entries = new Map<string, Entry>()
-  private roomRoot: TransformNode | null = null
-  private roomKey = ''
+  private architecture: Architecture
+  private cutaway = true
   private viewingId: string | null = null
   private imageRect = { x: 0, y: 0, width: 1, height: 1 }
-  private wallMaterial: PBRMaterial
-  private floorMaterial: PBRMaterial
   private subjectMaterial: PBRMaterial
   private markerMaterial: PBRMaterial
   private resizeObserver: ResizeObserver
@@ -134,9 +134,9 @@ export class LiveScene {
 
     this.ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), this.scene)
 
-    this.wallMaterial = this.createSurface('walls', new Color3(0.5, 0.5, 0.5), 0.85)
-    // Semi-gloss floor and slightly glossy skin give the polarizer something to cut.
-    this.floorMaterial = this.createSurface('floor', new Color3(0.42, 0.4, 0.38), 0.45)
+    this.architecture = new Architecture(this.scene, (name, color, roughness) => this.createSurface(name, color, roughness))
+    this.applyLayers()
+    // Slightly glossy skin gives the polarizer something to cut (floors have per-finish sheen).
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
     this.markerMaterial = this.createSurface('marker', new Color3(0.04, 0.04, 0.045), 0.6)
 
@@ -172,6 +172,7 @@ export class LiveScene {
     const ratio = Math.min(scale, window.devicePixelRatio || 1)
     this.engine.setHardwareScalingLevel(1 / ratio)
     this.engine.resize()
+    this.entries.forEach(entry => entry.pipeline?.invalidate())
   }
 
   getFps(): number {
@@ -189,8 +190,21 @@ export class LiveScene {
     this.scopeCallback = callback
   }
 
+  // Orbit view: walls cut at hip height (dollhouse) or full height.
+  setCutaway(on: boolean): void {
+    this.cutaway = on
+    this.applyLayers()
+  }
+
+  private applyLayers(): void {
+    this.orbitCamera.layerMask = LAYER.COMMON | (this.cutaway ? LAYER.CUT_WALLS : LAYER.FULL_WALLS)
+    this.entries.forEach(entry => {
+      if (entry.viewCamera) entry.viewCamera.layerMask = LAYER.COMMON | LAYER.FULL_WALLS | LAYER.CEILING
+    })
+  }
+
   sync(doc: SceneDoc): void {
-    this.syncRoom(doc.room)
+    const rebuilt = this.architecture.sync(doc)
 
     // Exposure, WB and polarizer come from the camera being looked through, or the active camera.
     const exposingId = this.viewingId ?? doc.activeCameraId
@@ -207,7 +221,7 @@ export class LiveScene {
     // Polarizer: cuts specular reflections as the ring turns (0° = none cut, 90° = most cut).
     const pol = settings?.polarizer.fitted ? Math.cos(settings.polarizer.angle * DEG) ** 2 : 1
     const specular = settings?.polarizer.fitted ? 0.15 + 0.85 * pol : 1
-    ;[this.floorMaterial, this.subjectMaterial, this.wallMaterial].forEach(m => { m.specularIntensity = specular })
+    ;[this.subjectMaterial, ...this.architecture.polarizable].forEach(m => { m.specularIntensity = specular })
 
     // Equipment stays readable at any exposure.
     this.markerMaterial.emissiveColor = new Color3(0.035, 0.035, 0.04).scale(key / Math.PI)
@@ -239,9 +253,12 @@ export class LiveScene {
 
     if (this.viewingId && !this.entries.has(this.viewingId)) this.viewThrough(null)
     this.refreshShadowCasters()
+    this.entries.forEach(entry => entry.pipeline?.invalidate())
+    if (rebuilt) this.applyLayers()
   }
 
   private applyViewport(): void {
+    this.entries.forEach(entry => entry.pipeline?.invalidate())
     const width = this.canvas.clientWidth || 1
     const height = this.canvas.clientHeight || 1
     const r = this.imageRect
@@ -298,40 +315,6 @@ export class LiveScene {
     mesh.isPickable = false
     mesh.parent = parent
     return mesh
-  }
-
-  private syncRoom(room: Room): void {
-    const key = `${room.width}x${room.depth}x${room.height}`
-    if (key === this.roomKey) return
-    this.roomKey = key
-    this.roomRoot?.dispose(false, false)
-
-    const root = new TransformNode('room', this.scene)
-    const { width, depth, height } = room
-
-    const floor = MeshBuilder.CreateGround('floor', { width, height: depth }, this.scene)
-    floor.material = this.floorMaterial
-    floor.receiveShadows = true
-    this.unpickable(floor, root)
-
-    // Planes face -z by default; each wall is turned to face into the room so that,
-    // with back-face culling, you can see in from outside.
-    const walls: Array<[string, number, Vector3, number]> = [
-      ['wallNorth', width, new Vector3(0, height / 2, depth / 2), 0],
-      ['wallSouth', width, new Vector3(0, height / 2, -depth / 2), Math.PI],
-      ['wallEast', depth, new Vector3(width / 2, height / 2, 0), Math.PI / 2],
-      ['wallWest', depth, new Vector3(-width / 2, height / 2, 0), -Math.PI / 2]
-    ]
-    walls.forEach(([name, size, position, rotation]) => {
-      const wall = MeshBuilder.CreatePlane(name, { width: size, height }, this.scene)
-      wall.position = position
-      wall.rotation.y = rotation
-      wall.material = this.wallMaterial
-      wall.receiveShadows = true
-      this.unpickable(wall, root)
-    })
-
-    this.roomRoot = root
   }
 
   private createEntry(item: SceneItem, key: string): Entry {
@@ -524,6 +507,7 @@ export class LiveScene {
     viewCamera.fovMode = Camera.FOVMODE_HORIZONTAL_FIXED
     viewCamera.minZ = 0.05
     viewCamera.maxZ = 200
+    viewCamera.layerMask = LAYER.COMMON | LAYER.FULL_WALLS | LAYER.CEILING
     entry.viewCamera = viewCamera
   }
 
@@ -624,13 +608,20 @@ export class LiveScene {
   }
 
   private refreshShadowCasters(): void {
-    const casters: AbstractMesh[] = []
+    // Subjects and the architecture (walls, doors) cast shadows, so light falls through doorways
+    // and windows the way it would on location.
+    const casters: AbstractMesh[] = [...this.architecture.casters]
     this.entries.forEach(entry => {
       if (entry.kind === 'subject' && entry.casters) casters.push(...entry.casters)
     })
     this.entries.forEach(entry => {
       const shadowMap = entry.shadows?.getShadowMap()
-      if (shadowMap) shadowMap.renderList = casters.slice()
+      if (!shadowMap) return
+      shadowMap.renderList = casters.slice()
+      // The scene only changes when the plan does, so shadow maps render once per change rather
+      // than every frame (a big saving on integrated GPUs).
+      shadowMap.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE
+      shadowMap.resetRefreshCounter()
     })
   }
 }

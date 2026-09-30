@@ -22,9 +22,17 @@
           <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }}</option>
         </select>
       </label>
+      <label v-if="!viewId" title="Dollhouse view: walls cut at hip height so you can see into the rooms">
+        Walls
+        <select v-model="editor.cutaway">
+          <option :value="true">Cutaway</option>
+          <option :value="false">Full height</option>
+        </select>
+      </label>
       <label title="Render resolution. Higher is sharper but heavier on the GPU.">
         Quality
         <select v-model.number="quality">
+          <option :value="0">Auto{{ quality === 0 ? ` (${autoLabel})` : '' }}</option>
           <option :value="1">Draft</option>
           <option :value="1.5">Standard</option>
           <option :value="2">High</option>
@@ -41,6 +49,7 @@ import CameraMonitor from '../components/monitor/CameraMonitor.vue'
 import { getBody } from '../library/cameras'
 import { getLens } from '../library/lenses'
 import { FrameCapture, LiveScene } from '../live/LiveScene'
+import { editor } from '../plan/editor'
 import { scene } from '../scene/store'
 import { CameraItem } from '../scene/types'
 
@@ -58,13 +67,33 @@ export default defineComponent({
     const frameCapture = shallowRef<FrameCapture | null>(null)
     // Per-viewer preference; storage can be unavailable (private mode), so fall back quietly.
     const readQuality = () => {
-      try { return Number(localStorage.getItem('previs.quality')) || 1.5 } catch { return 1.5 }
+      try {
+        const stored = localStorage.getItem('previs.quality')
+        return stored === null ? 0 : Number(stored)
+      } catch { return 0 }
     }
+    // 0 = Auto: adapt the render scale to keep the view smooth on this machine's GPU.
     const quality = ref(readQuality())
+    const autoScale = ref(1.5)
+    const AUTO_STEPS = [1, 1.25, 1.5, 2]
+    const autoLabel = computed(() => ({ 1: 'Draft', 1.25: 'Draft+', 1.5: 'Standard', 2: 'High' } as Record<number, string>)[autoScale.value])
+    const applyQuality = () => live?.setQuality(quality.value || autoScale.value)
     watch(quality, q => {
-      live?.setQuality(q)
+      applyQuality()
       try { localStorage.setItem('previs.quality', String(q)) } catch { /* ignore */ }
     })
+    let slow = 0
+    let fast = 0
+    const autoTimer = window.setInterval(() => {
+      // Only judge while the view is on screen (hidden tabs are throttled).
+      if (!live || quality.value !== 0 || !props.active || document.visibilityState !== 'visible') return
+      const fps = live.getFps()
+      const i = AUTO_STEPS.indexOf(autoScale.value)
+      slow = fps < 28 ? slow + 1 : 0
+      fast = fps > 55 ? fast + 1 : 0
+      if (slow >= 2 && i > 0) { autoScale.value = AUTO_STEPS[i - 1]; slow = 0; applyQuality() }
+      if (fast >= 6 && i < AUTO_STEPS.length - 1) { autoScale.value = AUTO_STEPS[i + 1]; fast = 0; applyQuality() }
+    }, 1000)
     const cameras = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
     // Kept outside Vue reactivity: Babylon objects must not be wrapped in proxies.
     let live: LiveScene | null = null
@@ -96,11 +125,12 @@ export default defineComponent({
 
     onMounted(() => {
       live = new LiveScene(canvas.value as HTMLCanvasElement)
-      live.setQuality(quality.value)
+      applyQuality()
+      live.setCutaway(editor.cutaway)
       live.sync(scene)
       // Dev-only handle for inspecting the Babylon scene from the console.
       if (process.env.NODE_ENV !== 'production') {
-        import('../live/calibration').then(calibration => Object.assign(window, { previs: live, previsScene: scene, previsCalibration: calibration }))
+        import('../live/calibration').then(calibration => Object.assign(window, { previs: live, previsScene: scene, previsEditor: editor, previsCalibration: calibration }))
       }
       resizeObserver = new ResizeObserver(layout)
       resizeObserver.observe(container.value as HTMLDivElement)
@@ -108,6 +138,7 @@ export default defineComponent({
     })
 
     watch(scene, () => live?.sync(scene), { deep: true })
+    watch(() => editor.cutaway, on => live?.setCutaway(on))
     watch(viewId, id => {
       live?.viewThrough(id)
       layout()
@@ -120,13 +151,14 @@ export default defineComponent({
     })
 
     onBeforeUnmount(() => {
+      window.clearInterval(autoTimer)
       resizeObserver?.disconnect()
       live?.dispose()
     })
 
     const lensLabel = (cam: CameraItem) => `${getLens(cam.props.lensId).focalLength}mm`
 
-    return { container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, quality }
+    return { container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, quality, autoLabel, editor }
   }
 })
 </script>

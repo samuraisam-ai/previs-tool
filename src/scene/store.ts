@@ -1,12 +1,31 @@
 import { reactive } from 'vue'
+import { dist, pointInPolygon, polygonArea } from '../plan/geometry'
 import { getFixture } from '../library/fixtures'
 import { defaultModifier, getModifier, modifiersFor } from '../library/modifiers'
-import { Bounce, bounceLight, isZoomable } from '../library/photometry'
+import { Bounce, bounceLight, illuminanceAt, isZoomable, luminousFlux } from '../library/photometry'
 import { DEFAULT_LENS } from '../library/lenses'
-import { CameraItem, CameraProps, ItemKind, LightItem, LightProps, SceneDoc, SceneItem } from './types'
+import { CameraItem, CameraProps, ItemKind, LightItem, LightProps, Pt, RoomArea, SceneDoc, SceneItem, Wall } from './types'
+
+export const DEFAULT_WALL_HEIGHT = 2.7
+export const DEFAULT_WALL_THICKNESS = 0.12
+
+export function makeWall(a: Pt, b: Pt, thickness = DEFAULT_WALL_THICKNESS, height = DEFAULT_WALL_HEIGHT): Wall {
+  return { id: newId('wall'), a: { ...a }, b: { ...b }, thickness, height }
+}
+
+export function makeRoom(name: string, points: Pt[]): RoomArea {
+  return { id: newId('room'), name, points: points.map(p => ({ ...p })), floor: 'wood', ceiling: true, ceilingHeight: DEFAULT_WALL_HEIGHT }
+}
+
+// The starting space: a 6 × 5 m room centred on the origin.
+function defaultArchitecture() {
+  const corners: Pt[] = [{ x: -3, z: -2.5 }, { x: 3, z: -2.5 }, { x: 3, z: 2.5 }, { x: -3, z: 2.5 }]
+  const walls = corners.map((p, i) => makeWall(p, corners[(i + 1) % 4]))
+  return { walls, rooms: [makeRoom('Room 1', corners)] }
+}
 
 let nextId = 1
-const newId = (kind: ItemKind) => `${kind}-${nextId++}`
+export const newId = (kind: string) => `${kind}-${nextId++}`
 
 export const DEFAULT_FIXTURE = 'forza-300b-ii'
 
@@ -59,8 +78,12 @@ export function cameraPropsFor(subjectId: string | null): CameraProps {
 const subjectId = newId('subject')
 const cameraId = newId('camera')
 
+const initialArchitecture = defaultArchitecture()
+
 export const scene = reactive<SceneDoc>({
-  room: { width: 6, depth: 5, height: 2.8 },
+  walls: initialArchitecture.walls,
+  openings: [],
+  rooms: initialArchitecture.rooms,
   items: [
     { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75 },
     {
@@ -141,9 +164,27 @@ export function select(id: string | null): void {
   scene.selectedId = id
 }
 
-// Estimated bounce (indirect) light in the room, from every light's flux and the room's surfaces.
+// Estimated bounce (indirect) light, from every light's flux and the surfaces that reflect it:
+// room floors and ceilings plus both faces of every wall (falls back to a typical room when empty).
 export function sceneBounce(doc: SceneDoc = scene): Bounce {
-  const { width, depth, height } = doc.room
-  const area = 2 * (width * depth + width * height + depth * height)
-  return bounceLight(doc.items.filter((i): i is LightItem => i.kind === 'light'), area)
+  const floors = doc.rooms.reduce((sum, r) => sum + Math.abs(polygonArea(r.points)) * (r.ceiling ? 2 : 1), 0)
+  const walls = doc.walls.reduce((sum, w) => sum + dist(w.a, w.b) * w.height, 0)
+  const area = floors + walls || 120
+  const inside = (item: LightItem) => !doc.rooms.length || doc.rooms.some(r => pointInPolygon({ x: item.x, z: item.z }, r.points))
+  // A light outside only puts in what reaches the openings: illuminance at each window/doorway × its
+  // area, facing-corrected. Closed doors let nothing through.
+  const throughOpenings = (item: LightItem) => doc.openings.reduce((sum, o) => {
+    const wall = doc.walls.find(w => w.id === o.wallId)
+    if (!wall || ((o.kind === 'door' || o.kind === 'double-door' || o.kind === 'sliding-door') && o.openAngle <= 0)) return sum
+    const L = dist(wall.a, wall.b) || 1
+    const dx = (wall.b.x - wall.a.x) / L
+    const dz = (wall.b.z - wall.a.z) / L
+    const centre: [number, number, number] = [wall.a.x + dx * o.offset, o.sill + o.height / 2, wall.a.z + dz * o.offset]
+    const toLight = [item.x - centre[0], item.height - centre[1], item.z - centre[2]]
+    const dLen = Math.hypot(toLight[0], toLight[1], toLight[2]) || 1
+    const facing = Math.abs((-dz * toLight[0] + dx * toLight[2]) / dLen)
+    return sum + illuminanceAt(item, centre) * facing * o.width * o.height
+  }, 0)
+  return bounceLight(doc.items.filter((i): i is LightItem => i.kind === 'light'), area,
+    item => (inside(item) ? luminousFlux(item) : throughOpenings(item)))
 }

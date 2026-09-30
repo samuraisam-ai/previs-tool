@@ -182,11 +182,13 @@ export interface Bounce {
   colour: RGB // luminance-normalised linear RGB
 }
 
-export function bounceLight(lights: LightItem[], surfaceArea: number): Bounce {
+// `fluxOf` lets the caller decide how much of each light's output actually enters the space
+// (e.g. only what comes through the windows for a light standing outside).
+export function bounceLight(lights: LightItem[], surfaceArea: number, fluxOf: (item: LightItem) => number = luminousFlux): Bounce {
   let flux = 0
   const tint: RGB = [0, 0, 0]
   lights.forEach(item => {
-    const phi = luminousFlux(item)
+    const phi = fluxOf(item)
     const c = resolveLight(item).colour
     flux += phi
     tint[0] += c[0] * phi
