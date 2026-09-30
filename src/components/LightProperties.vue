@@ -59,9 +59,10 @@
         <option value="horizontal">Horizontal</option>
       </select>
     </label>
-    <label v-if="!(resolved.emitter.shape === 'tube' && light.props.orientation === 'vertical') && !resolved.omni">Tilt down <span>{{ light.props.tilt }}°</span>
-      <input type="range" min="-30" max="90" step="1" v-model.number="light.props.tilt" />
-    </label>
+    <div v-if="!(resolved.emitter.shape === 'tube' && light.props.orientation === 'vertical') && !resolved.omni" class="tilt">
+      <span class="caption">Tilt</span>
+      <TiltWheel v-model="light.props.tilt" icon="light" label="Light tilt" />
+    </div>
 
     <div class="readout">
       {{ resolved.omni ? 'Omni' : `Beam ${Math.round(resolved.beam)}°` }} · {{ Math.round(resolved.candela).toLocaleString() }} cd on-axis
@@ -72,6 +73,7 @@
 
 <script lang="ts">
 import { computed, defineComponent } from 'vue'
+import TiltWheel from './controls/TiltWheel.vue'
 import { FIXTURES } from '../library/fixtures'
 import { modifiersFor } from '../library/modifiers'
 import { illuminanceAt, isZoomable, resolveLight, subjectMeterPoint } from '../library/photometry'
@@ -81,6 +83,7 @@ import { LightItem, SubjectItem } from '../scene/types'
 
 export default defineComponent({
   name: 'LightProperties',
+  components: { TiltWheel },
   props: {
     id: { type: String, required: true }
   },
@@ -124,6 +127,8 @@ export default defineComponent({
 
 <style scoped>
 .light-props { display: flex; flex-direction: column; gap: 12px; }
+.tilt { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tilt .caption { align-self: flex-start; color: var(--muted); }
 label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
 label > span { color: var(--text); display: flex; align-items: center; gap: 6px; }
 select { width: 100%; box-sizing: border-box; }

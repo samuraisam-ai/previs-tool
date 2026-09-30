@@ -2,7 +2,8 @@ import { reactive } from 'vue'
 import { getFixture } from '../library/fixtures'
 import { defaultModifier, getModifier, modifiersFor } from '../library/modifiers'
 import { isZoomable } from '../library/photometry'
-import { ItemKind, LightItem, LightProps, SceneDoc, SceneItem } from './types'
+import { DEFAULT_LENS } from '../library/lenses'
+import { CameraItem, CameraProps, ItemKind, LightItem, LightProps, SceneDoc, SceneItem } from './types'
 
 let nextId = 1
 const newId = (kind: ItemKind) => `${kind}-${nextId++}`
@@ -30,18 +31,46 @@ export function lightPropsFor(fixtureId: string, previous?: LightProps): LightPr
   }
 }
 
+export function cameraPropsFor(subjectId: string | null): CameraProps {
+  return {
+    bodyId: 'fx3',
+    lensId: DEFAULT_LENS,
+    fps: 23.976,
+    profile: 'cinetone',
+    shutterMode: 'angle',
+    shutterAngle: 180,
+    shutterSpeed: 48,
+    iso: 800,
+    tStop: 4,
+    nd: { fitted: false, stops: 3 },
+    polarizer: { fitted: false, angle: 0 },
+    wb: 4300,
+    tint: 0,
+    focus: { mode: subjectId ? 'subject' : 'manual', subjectId, distance: 2 },
+    tilt: 0,
+    display: {
+      osd: true, frameLines: 'off', grid: 'off', centre: false, safety: false,
+      zebras: false, zebraLevel: 95, falseColour: false, mm: true, scopes: ['histogram']
+    },
+    recording: false
+  }
+}
+
+const subjectId = newId('subject')
+const cameraId = newId('camera')
+
 export const scene = reactive<SceneDoc>({
   room: { width: 6, depth: 5, height: 2.8 },
   items: [
-    { id: newId('subject'), kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75 },
+    { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75 },
     {
       id: newId('light'), kind: 'light', name: 'Key', x: -1.5, z: -0.6, rotationY: 50, height: 2.1,
       props: { ...lightPropsFor(DEFAULT_FIXTURE), modifierId: 'para-90', cct: 4300, dimmer: 15 }
     },
-    { id: newId('camera'), kind: 'camera', name: 'Camera A', x: 0.3, z: -1.8, rotationY: 0, height: 1.5, props: { focalLength: 35 } }
+    { id: cameraId, kind: 'camera', name: 'Camera A', x: 0.3, z: -1.8, rotationY: 0, height: 1.5, props: cameraPropsFor(subjectId) }
   ],
   selectedId: null,
-  exposure: { iso: 800, tStop: 4, shutter: 1 / 50 },
+  activeCameraId: cameraId,
   ambientLux: 2
 })
 
@@ -58,7 +87,9 @@ export function addItem(kind: ItemKind, fixtureId = DEFAULT_FIXTURE): SceneItem 
     const height = fixture.shape.type === 'bulb' ? 1.2 : fixture.shape.type === 'tube' ? 1.2 : 2.0
     item = { ...base, z: -1.5, kind, name: fixture.model, height, props: lightPropsFor(fixtureId) }
   } else {
-    item = { ...base, kind, name: `Camera ${String.fromCharCode(64 + counts[kind])}`, height: 1.5, props: { focalLength: 35 } }
+    const firstSubject = scene.items.find(i => i.kind === 'subject')
+    item = { ...base, z: -1.5, kind, name: `Camera ${String.fromCharCode(64 + counts[kind])}`, height: 1.5, props: cameraPropsFor(firstSubject?.id ?? null) }
+    if (!scene.activeCameraId) scene.activeCameraId = item.id
   }
   scene.items.push(item)
   scene.selectedId = item.id
@@ -91,6 +122,19 @@ export function removeItem(id: string): void {
   const index = scene.items.findIndex(item => item.id === id)
   if (index !== -1) scene.items.splice(index, 1)
   if (scene.selectedId === id) scene.selectedId = null
+  if (scene.activeCameraId === id) scene.activeCameraId = scene.items.find(i => i.kind === 'camera')?.id ?? null
+  // Cameras tracking a removed subject fall back to manual focus at the same distance.
+  scene.items.forEach(item => {
+    if (item.kind === 'camera' && item.props.focus.subjectId === id) {
+      item.props.focus.mode = 'manual'
+      item.props.focus.subjectId = null
+    }
+  })
+}
+
+export function activeCamera(): CameraItem | undefined {
+  const cam = getItem(scene.activeCameraId)
+  return cam && cam.kind === 'camera' ? cam : undefined
 }
 
 export function select(id: string | null): void {

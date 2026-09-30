@@ -51,7 +51,9 @@
             </template>
 
             <template v-else-if="item.kind === 'camera'">
-              <path class="fov" :d="wedge(fovDegrees(item.props.focalLength), 3)" pointer-events="none" />
+              <path class="fov" :d="wedge(camViews[item.id].fov, camViews[item.id].length)" pointer-events="none" />
+              <path class="dof" :d="camViews[item.id].dofPath" pointer-events="none" />
+              <path class="focus-arc" :d="camViews[item.id].focusPath" pointer-events="none" />
               <rect class="body" x="-0.14" y="-0.1" width="0.28" height="0.24" rx="0.03" @pointerdown.stop="startMove($event, item)" />
               <rect class="lens" x="-0.07" y="-0.2" width="0.14" height="0.1" @pointerdown.stop="startMove($event, item)" />
             </template>
@@ -66,7 +68,10 @@
               <circle cy="-0.66" r="0.07" @pointerdown.stop="startRotate($event, item)" />
             </g>
           </g>
-          <text class="label" y="0.42" text-anchor="middle" pointer-events="none">{{ item.name }}</text>
+          <text class="label" y="0.42" text-anchor="middle" pointer-events="none">{{ item.name }}{{ item.kind === 'camera' ? ` · ${camViews[item.id].lensMm}mm` : '' }}</text>
+          <text v-if="(item.kind === 'camera' || item.kind === 'light') && item.props.tilt" class="tilt-label" y="0.6" text-anchor="middle" pointer-events="none">
+            {{ Math.abs(item.props.tilt) }}° {{ item.props.tilt > 0 ? 'down' : 'up' }}
+          </text>
         </g>
       </svg>
       <div class="hint">Drag to move (snaps to 10 cm, hold Alt for free) · drag the dot to aim (snaps to 5°, hold Alt for free) · Delete removes</div>
@@ -82,34 +87,32 @@
 
         <LightProperties v-if="selected.kind === 'light'" :id="selected.id" />
 
+        <p v-if="selected.kind === 'subject' && !meter" class="readout">Add a camera to meter this subject.</p>
         <template v-if="selected.kind === 'subject' && meter">
           <h4 class="section">Light meter (face)</h4>
           <div class="meter-total">
             <strong>{{ meter.total.toLocaleString() }} lux</strong>
-            <span>≈ T{{ meter.stop }} at ISO {{ exposure.iso }}, 1/{{ Math.round(1 / exposure.shutter) }}</span>
+            <span>≈ T{{ meter.stop }} at ISO {{ meter.cam.iso }}, {{ meter.shutter }}{{ meter.filters }}</span>
           </div>
           <div class="meter-vs" :class="meter.verdict">{{ meter.vsText }}</div>
           <div class="meter-row" v-for="row in meter.rows" :key="row.id">
             <i class="swatch" :style="{ background: row.hex }"></i>{{ row.name }} <span>{{ row.lux.toLocaleString() }} lux</span>
           </div>
+          <label v-if="cameraList.length > 1">Metering for
+            <select v-model="scene.activeCameraId"><option v-for="c in cameraList" :key="c.id" :value="c.id">{{ c.name }}</option></select>
+          </label>
           <div class="exposure">
             <label>ISO
-              <select v-model.number="exposure.iso"><option v-for="iso in isos" :key="iso" :value="iso">{{ iso }}</option></select>
+              <select v-model.number="meter.cam.iso"><option v-for="iso in isos" :key="iso" :value="iso">{{ iso }}</option></select>
             </label>
             <label>Camera T-stop
-              <select v-model.number="exposure.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
+              <select v-model.number="meter.cam.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
             </label>
           </div>
           <div class="readout">Direct light only; walls, bounce and shadows aren't counted.</div>
         </template>
 
-        <template v-if="selected.kind === 'camera'">
-          <label>Focal length (mm)
-            <select v-model.number="selected.props.focalLength">
-              <option v-for="mm in focalLengths" :key="mm" :value="mm">{{ mm }}mm</option>
-            </select>
-          </label>
-        </template>
+        <CameraProperties v-if="selected.kind === 'camera'" :id="selected.id" />
 
         <button class="danger" @click="remove(selected.id)">Delete</button>
       </template>
@@ -121,12 +124,16 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import LightLibrary from '../components/LightLibrary.vue'
+import CameraProperties from '../components/CameraProperties.vue'
 import LightProperties from '../components/LightProperties.vue'
+import { getBody } from '../library/cameras'
+import { getLens } from '../library/lenses'
+import { dofLimits, focusDistance, formatShutter, horizontalFov } from '../library/optics'
 import {
-  illuminanceAt, ISOS, nearestStop, ResolvedLight, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor
+  illuminanceAt, nearestStop, ResolvedLight, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor
 } from '../library/photometry'
-import { addItem, getItem, removeItem, scene, select } from '../scene/store'
-import { horizontalFov, ItemKind, LightItem, SceneItem } from '../scene/types'
+import { activeCamera, addItem, getItem, removeItem, scene, select } from '../scene/store'
+import { CameraItem, ItemKind, LightItem, SceneItem } from '../scene/types'
 
 const MARGIN = 1.5
 const MOVE_SNAP = 0.1
@@ -200,7 +207,7 @@ type Drag = { mode: 'move' | 'rotate'; id: string; offsetX: number; offsetZ: num
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { LightLibrary, LightProperties },
+  components: { CameraProperties, LightLibrary, LightProperties },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -238,7 +245,39 @@ export default defineComponent({
       const y = -Math.cos(half) * length
       return `M 0 0 L ${x} ${y} A ${length} ${length} 0 0 0 ${-x} ${y} Z`
     }
-    const fovDegrees = (focalLength: number) => horizontalFov(focalLength) * 180 / Math.PI
+    const cameraList = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
+
+    // Annular sector facing up between radii r1 and r2 over the full angle (deg).
+    const band = (angle: number, r1: number, r2: number) => {
+      const h = (angle / 2) * Math.PI / 180
+      const pt = (r: number, a: number) => `${r * Math.sin(a)} ${-r * Math.cos(a)}`
+      return `M ${pt(r1, -h)} A ${r1} ${r1} 0 0 1 ${pt(r1, h)} L ${pt(r2, h)} A ${r2} ${r2} 0 0 0 ${pt(r2, -h)} Z`
+    }
+    const arc = (angle: number, r: number) => {
+      const h = (angle / 2) * Math.PI / 180
+      return `M ${r * Math.sin(-h)} ${-r * Math.cos(-h)} A ${r} ${r} 0 0 1 ${r * Math.sin(h)} ${-r * Math.cos(h)}`
+    }
+
+    // Camera footprint on the plan: true horizontal FOV, focus distance and depth of field
+    // (distances along the lens axis, projected onto the floor).
+    const camViews = computed(() => {
+      const result: Record<string, { fov: number; length: number; lensMm: number; focusPath: string; dofPath: string }> = {}
+      cameraList.value.forEach(cam => {
+        const fov = horizontalFov(cam.props) * 180 / Math.PI
+        const flat = Math.cos(cam.props.tilt * Math.PI / 180)
+        const focus = focusDistance(cam, scene)
+        const { near, far } = dofLimits(cam.props, focus)
+        const length = Math.min(9, Math.max(3, focus * flat * 1.8))
+        result[cam.id] = {
+          fov,
+          length,
+          lensMm: getLens(cam.props.lensId).focalLength,
+          focusPath: arc(fov, focus * flat),
+          dofPath: band(fov, Math.max(near * flat, 0.05), Math.min(far * flat, length))
+        }
+      })
+      return result
+    })
 
     const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))
 
@@ -259,10 +298,11 @@ export default defineComponent({
       return result
     })
 
-    const exposure = scene.exposure
     const meter = computed(() => {
       const subject = selected.value
-      if (!subject || subject.kind !== 'subject') return null
+      const cam = activeCamera()
+      if (!subject || subject.kind !== 'subject' || !cam) return null
+      const exposure = cam.props
       const point = subjectMeterPoint(subject)
       const rows = lights.value
         .map(item => ({ id: item.id, name: item.name, hex: resolveLight(item).colourHex, lux: Math.round(illuminanceAt(item, point)) }))
@@ -274,7 +314,8 @@ export default defineComponent({
         ? 'No direct light on the face'
         : Math.abs(over) < 0.17 ? `Exposed right at T${exposure.tStop}`
           : `${over > 0 ? '+' : '−'}${Math.abs(over).toFixed(1)} stops ${over > 0 ? 'over' : 'under'} at T${exposure.tStop}`
-      return { rows, total, stop: nearestStop(tStopFor(total, exposure)), verdict, vsText }
+      const filters = [exposure.nd.fitted ? ` · ND ${exposure.nd.stops.toFixed(1)}` : '', exposure.polarizer.fitted ? ' · POL' : ''].join('')
+      return { rows, total, stop: nearestStop(tStopFor(total, exposure)), verdict, vsText, cam: exposure, shutter: formatShutter(exposure), filters }
     })
 
     const showLibrary = ref(false)
@@ -344,9 +385,9 @@ export default defineComponent({
 
     return {
       svg, room, items, selectedId, selected, bounds, viewBox, gridX, gridY, isMajor,
-      wedge, fovDegrees, visuals, meter, exposure, showLibrary, addLight, isos: ISOS, tStops: T_STOPS, startMove, startRotate, onPointerMove, endDrag, add, remove, select,
+      wedge, camViews, cameraList, scene, visuals, meter, showLibrary, addLight, tStops: T_STOPS, startMove, startRotate, onPointerMove, endDrag, add, remove, select,
       kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera' },
-      focalLengths: [14, 18, 24, 35, 50, 85, 100, 135]
+      isos: getBody('fx3').isos
     }
   }
 })
@@ -419,6 +460,9 @@ svg {
 .exposure { display: flex; gap: 8px; }
 .exposure label { flex: 1; }
 .camera .body, .camera .lens { fill: #8a8f9c; cursor: grab; }
+.camera .dof { fill: rgba(120, 170, 255, 0.13); }
+.camera .focus-arc { fill: none; stroke: #ffb547; stroke-width: 0.025; }
+.tilt-label { fill: var(--muted); font-size: 0.13px; }
 .camera .fov { fill: rgba(120, 170, 255, 0.07); stroke: rgba(120, 170, 255, 0.6); stroke-width: 0.015; stroke-dasharray: 0.08 0.06; }
 .rotate-handle line { stroke: var(--accent); stroke-width: 0.02; }
 .rotate-handle circle { fill: var(--accent); cursor: crosshair; }

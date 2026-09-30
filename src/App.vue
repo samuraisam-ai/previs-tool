@@ -10,7 +10,7 @@
     <main>
       <!-- Both views stay mounted so the Babylon engine is created once. -->
       <FloorPlanView v-show="view === 'plan'" :active="view === 'plan'" />
-      <LiveView v-show="view === 'live'" />
+      <LiveView v-show="view === 'live'" :active="view === 'live'" />
     </main>
   </div>
 </template>

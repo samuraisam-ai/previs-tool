@@ -2,7 +2,8 @@ import { lightColour, RGB, toHex } from './colour'
 import { getFixture } from './fixtures'
 import { getModifier } from './modifiers'
 import { Fixture, Modifier } from './types'
-import { Exposure, LightItem, SubjectItem } from '../scene/types'
+import { filterStops, INCIDENT_C, keyLux, shutterSeconds } from './optics'
+import { CameraProps, LightItem, SubjectItem } from '../scene/types'
 
 const DEG = Math.PI / 180
 
@@ -144,26 +145,18 @@ export function subjectMeterPoint(subject: SubjectItem): [number, number, number
   return [subject.x, subject.height - 0.12, subject.z]
 }
 
-const INCIDENT_C = 250
-
-// T-stop that exposes `lux` as middle grey (incident meter equation N² / t = E·S / C).
-export function tStopFor(lux: number, exposure: Exposure): number {
-  return Math.sqrt((lux * exposure.iso * exposure.shutter) / INCIDENT_C)
+// T-stop that exposes `lux` as middle grey with this camera's ISO, shutter and filters.
+export function tStopFor(lux: number, camera: CameraProps): number {
+  return Math.sqrt((lux * camera.iso * shutterSeconds(camera)) / (INCIDENT_C * Math.pow(2, filterStops(camera))))
 }
 
-// Illuminance that the camera settings expose as middle grey.
-export function keyLuxFor(exposure: Exposure): number {
-  return (exposure.tStop * exposure.tStop * INCIDENT_C) / (exposure.iso * exposure.shutter)
-}
-
-export const T_STOPS = [1, 1.1, 1.2, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22]
-export const ISOS = [100, 200, 400, 640, 800, 1280, 1600, 2500, 3200, 5000, 6400, 12800]
+export const T_STOPS = [1.3, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22]
 
 export function nearestStop(n: number): number {
   return T_STOPS.reduce((best, s) => (Math.abs(Math.log2(s / n)) < Math.abs(Math.log2(best / n)) ? s : best), T_STOPS[0])
 }
 
-// Stops of over (+) / under (−) exposure for `lux` at the given camera settings.
-export function stopsOver(lux: number, exposure: Exposure): number {
-  return lux > 0 ? Math.log2(lux / keyLuxFor(exposure)) : -Infinity
+// Stops of over (+) / under (−) exposure for `lux` with this camera.
+export function stopsOver(lux: number, camera: CameraProps): number {
+  return lux > 0 ? Math.log2(lux / keyLux(camera)) : -Infinity
 }

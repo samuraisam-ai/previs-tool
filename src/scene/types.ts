@@ -18,8 +18,42 @@ export interface LightProps {
   orientation: 'vertical' | 'horizontal' // tubes
 }
 
+export type FrameLines = 'off' | '2.39' | '2.00' | '1.85' | '4:3' | '1:1' | '9:16' | '4:5'
+export type GridType = 'off' | 'thirds' | 'square' | 'diagonal'
+export type ScopeId = 'histogram' | 'waveform' | 'parade' | 'vectorscope'
+
+// What the camera monitor shows. Mirrors the FX3's display/assist settings.
+export interface CameraDisplay {
+  osd: boolean // DISP: viewfinder overlay on/off
+  frameLines: FrameLines
+  grid: GridType
+  centre: boolean
+  safety: boolean
+  zebras: boolean
+  zebraLevel: number // IRE
+  falseColour: boolean
+  mm: boolean // metered-manual exposure scale
+  scopes: ScopeId[] // up to two shown at once
+}
+
 export interface CameraProps {
-  focalLength: number // mm, full-frame 36mm sensor width
+  bodyId: string
+  lensId: string
+  fps: number
+  profile: 'cinetone' | 'slog3'
+  shutterMode: 'angle' | 'speed'
+  shutterAngle: number // degrees
+  shutterSpeed: number // denominator: 48 = 1/48 s
+  iso: number
+  tStop: number
+  nd: { fitted: boolean; stops: number } // variable ND, 2–8 stops
+  polarizer: { fitted: boolean; angle: number } // ring rotation 0–180°
+  wb: number // Kelvin
+  tint: number // -99 green … +99 magenta
+  focus: { mode: 'subject' | 'manual'; subjectId: string | null; distance: number } // distance in m
+  tilt: number // degrees below horizontal (negative = up)
+  display: CameraDisplay
+  recording: boolean
 }
 
 interface BaseItem {
@@ -43,24 +77,11 @@ export interface Room {
   height: number
 }
 
-// Camera exposure used by the Live View and the light meter. shutter is in seconds.
-export interface Exposure {
-  iso: number
-  tStop: number
-  shutter: number
-}
-
 export interface SceneDoc {
   room: Room
   items: SceneItem[]
   selectedId: string | null
-  exposure: Exposure
+  // The camera whose exposure drives the orbit view and the light meter.
+  activeCameraId: string | null
   ambientLux: number
-}
-
-export const SENSOR_WIDTH_MM = 36
-
-// Horizontal field of view in radians for a focal length on a full-frame sensor.
-export function horizontalFov(focalLength: number): number {
-  return 2 * Math.atan(SENSOR_WIDTH_MM / (2 * focalLength))
 }
