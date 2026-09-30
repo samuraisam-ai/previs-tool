@@ -22,6 +22,14 @@
           <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }}</option>
         </select>
       </label>
+      <label title="Render resolution. Higher is sharper but heavier on the GPU.">
+        Quality
+        <select v-model.number="quality">
+          <option :value="1">Draft</option>
+          <option :value="1.5">Standard</option>
+          <option :value="2">High</option>
+        </select>
+      </label>
       <span v-if="!viewId" class="hint">Drag to orbit · right-drag to pan · scroll to zoom</span>
     </div>
   </div>
@@ -48,6 +56,15 @@ export default defineComponent({
     const viewId = ref<string | null>(null)
     const imageRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
     const frameCapture = shallowRef<FrameCapture | null>(null)
+    // Per-viewer preference; storage can be unavailable (private mode), so fall back quietly.
+    const readQuality = () => {
+      try { return Number(localStorage.getItem('previs.quality')) || 1.5 } catch { return 1.5 }
+    }
+    const quality = ref(readQuality())
+    watch(quality, q => {
+      live?.setQuality(q)
+      try { localStorage.setItem('previs.quality', String(q)) } catch { /* ignore */ }
+    })
     const cameras = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
     // Kept outside Vue reactivity: Babylon objects must not be wrapped in proxies.
     let live: LiveScene | null = null
@@ -79,9 +96,12 @@ export default defineComponent({
 
     onMounted(() => {
       live = new LiveScene(canvas.value as HTMLCanvasElement)
+      live.setQuality(quality.value)
       live.sync(scene)
       // Dev-only handle for inspecting the Babylon scene from the console.
-      if (process.env.NODE_ENV !== 'production') Object.assign(window, { previs: live, previsScene: scene })
+      if (process.env.NODE_ENV !== 'production') {
+        import('../live/calibration').then(calibration => Object.assign(window, { previs: live, previsScene: scene, previsCalibration: calibration }))
+      }
       resizeObserver = new ResizeObserver(layout)
       resizeObserver.observe(container.value as HTMLDivElement)
       layout()
@@ -106,7 +126,7 @@ export default defineComponent({
 
     const lensLabel = (cam: CameraItem) => `${getLens(cam.props.lensId).focalLength}mm`
 
-    return { container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel }
+    return { container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, quality }
   }
 })
 </script>

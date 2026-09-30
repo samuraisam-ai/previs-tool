@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import { getFixture } from '../library/fixtures'
 import { defaultModifier, getModifier, modifiersFor } from '../library/modifiers'
-import { isZoomable } from '../library/photometry'
+import { Bounce, bounceLight, isZoomable } from '../library/photometry'
 import { DEFAULT_LENS } from '../library/lenses'
 import { CameraItem, CameraProps, ItemKind, LightItem, LightProps, SceneDoc, SceneItem } from './types'
 
@@ -71,7 +71,7 @@ export const scene = reactive<SceneDoc>({
   ],
   selectedId: null,
   activeCameraId: cameraId,
-  ambientLux: 2
+  ambientLux: 0.5
 })
 
 const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1 }
@@ -139,4 +139,11 @@ export function activeCamera(): CameraItem | undefined {
 
 export function select(id: string | null): void {
   scene.selectedId = id
+}
+
+// Estimated bounce (indirect) light in the room, from every light's flux and the room's surfaces.
+export function sceneBounce(doc: SceneDoc = scene): Bounce {
+  const { width, depth, height } = doc.room
+  const area = 2 * (width * depth + width * height + depth * height)
+  return bounceLight(doc.items.filter((i): i is LightItem => i.kind === 'light'), area)
 }

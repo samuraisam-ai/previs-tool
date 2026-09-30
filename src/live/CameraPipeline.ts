@@ -3,14 +3,14 @@ import {
   Constants,
   DepthRenderer,
   Effect,
-  ImageProcessingPostProcess,
   PostProcess,
   Scene,
   Texture
 } from '@babylonjs/core'
 
 // Per-camera post-processing that mimics the camera: physical depth of field (bokeh) on the HDR
-// scene, then exposure + tonemapping, then the monitor's exposure-assist overlays.
+// scene, then the camera's display transform (exposure, white balance, tone curve), then the
+// monitor's exposure-assist overlays.
 
 // Background (nothing rendered) reads as depth 0 in the camera-space-Z depth map → treat as far away.
 const FAR = 10000.0
@@ -52,7 +52,10 @@ uniform sampler2D textureSampler;
 void main(void) {
   vec3 c = texture2D(textureSampler, vUV).rgb;
   if (any(isnan(c))) c = vec3(0.0);
-  gl_FragColor = vec4(min(c, vec3(60000.0)), 1.0);
+  // Keep within half-float range by scaling, not per-channel clamping, so colours keep their hue.
+  float m = max(max(c.r, c.g), c.b);
+  if (m > 60000.0) c *= 60000.0 / m;
+  gl_FragColor = vec4(c, 1.0);
 }
 `
 
@@ -128,6 +131,55 @@ void main(void) {
 }
 `
 
+// Camera display transform (scene-linear HDR → display sRGB), modelled on a Rec.709 camera look:
+// exposure and white balance, faithful through the mids (18% grey stays 18%), then a soft shoulder
+// into white. The shoulder is applied to the brightest channel and scales all three together, so hue
+// never rotates; sources far past clip bleach towards white the way a sensor clips.
+Effect.ShadersStore.previsDisplayFragmentShader = `
+precision highp float;
+varying vec2 vUV;
+uniform sampler2D textureSampler;
+uniform float exposure;
+uniform vec3 wbGains;
+const float KNEE = 0.6;
+const float CLIP = 2.4;
+
+float shoulder(float x) {
+  return x <= KNEE ? x : KNEE + (1.0 - KNEE) * (1.0 - exp(-(x - KNEE) / (1.0 - KNEE)));
+}
+vec3 encodeSrgb(vec3 c) {
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+
+void main(void) {
+  vec3 c = max(texture2D(textureSampler, vUV).rgb, 0.0) * exposure * wbGains;
+  float n = max(max(c.r, c.g), c.b);
+  if (n > KNEE) {
+    float t = shoulder(n);
+    c *= t / n;
+    float bleach = clamp(log2(n / CLIP) / 3.0, 0.0, 1.0);
+    c = mix(c, vec3(t), bleach);
+  }
+  gl_FragColor = vec4(encodeSrgb(clamp(c, 0.0, 1.0)), 1.0);
+}
+`
+
+// Shared by every camera's display pass (the orbit view uses the active camera's settings).
+export interface DisplaySettings {
+  exposure: number
+  wbGains: [number, number, number]
+}
+
+function createDisplay(camera: Camera, engine: ReturnType<Scene['getEngine']>, display: DisplaySettings): PostProcess {
+  const pass = new PostProcess('display', 'previsDisplay', ['exposure', 'wbGains'], null, 1, camera,
+    Texture.BILINEAR_SAMPLINGMODE, engine, false, null, Constants.TEXTURETYPE_HALF_FLOAT)
+  pass.onApply = effect => {
+    effect.setFloat('exposure', display.exposure)
+    effect.setFloat3('wbGains', display.wbGains[0], display.wbGains[1], display.wbGains[2])
+  }
+  return pass
+}
+
 Effect.ShadersStore.previsMonitorFragmentShader = `
 precision highp float;
 varying vec2 vUV;
@@ -197,7 +249,7 @@ export class CameraPipeline {
     zebras: false, zebraLevel: 95, falseColour: false, noiseAmp: 0
   }
 
-  constructor(scene: Scene, camera: Camera) {
+  constructor(scene: Scene, camera: Camera, display: DisplaySettings) {
     const engine = scene.getEngine()
     const HALF = Constants.TEXTURETYPE_HALF_FLOAT
     const LINEAR = Texture.BILINEAR_SAMPLINGMODE
@@ -234,8 +286,8 @@ export class CameraPipeline {
       effect.setTextureFromPostProcess('sharpSampler', capture)
     }
 
-    // HDR in, display out: exposure + ACES from the scene's image-processing configuration.
-    const imaging = new ImageProcessingPostProcess('imaging', 1, camera, LINEAR, engine, false, HALF, scene.imageProcessingConfiguration)
+    // HDR in, display out.
+    const imaging = createDisplay(camera, engine, display)
 
     const monitor = this.monitor = new PostProcess(
       'monitor', 'previsMonitor', ['zebras', 'zebraLevel', 'falseColour', 'noiseAmp', 'time'],
@@ -270,10 +322,7 @@ export class CameraPipeline {
   }
 }
 
-// The orbit camera only gets exposure + tonemapping (HDR input so bright sources clip naturally).
-export function attachImaging(scene: Scene, camera: Camera): ImageProcessingPostProcess {
-  return new ImageProcessingPostProcess(
-    'imaging-orbit', 1, camera, Texture.BILINEAR_SAMPLINGMODE, scene.getEngine(), false,
-    Constants.TEXTURETYPE_HALF_FLOAT, scene.imageProcessingConfiguration
-  )
+// The orbit camera only gets the display transform (HDR input so bright sources clip naturally).
+export function attachDisplay(scene: Scene, camera: Camera, display: DisplaySettings): PostProcess {
+  return createDisplay(camera, scene.getEngine(), display)
 }

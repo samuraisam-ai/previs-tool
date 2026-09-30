@@ -109,7 +109,7 @@
               <select v-model.number="meter.cam.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
             </label>
           </div>
-          <div class="readout">Direct light only; walls, bounce and shadows aren't counted.</div>
+          <div class="readout">Direct light plus estimated room bounce; shadows aren't counted.</div>
         </template>
 
         <CameraProperties v-if="selected.kind === 'camera'" :id="selected.id" />
@@ -132,7 +132,7 @@ import { dofLimits, focusDistance, formatShutter, horizontalFov } from '../libra
 import {
   illuminanceAt, nearestStop, ResolvedLight, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor
 } from '../library/photometry'
-import { activeCamera, addItem, getItem, removeItem, scene, select } from '../scene/store'
+import { activeCamera, addItem, getItem, removeItem, scene, sceneBounce, select } from '../scene/store'
 import { CameraItem, ItemKind, LightItem, SceneItem } from '../scene/types'
 
 const MARGIN = 1.5
@@ -307,6 +307,8 @@ export default defineComponent({
       const rows = lights.value
         .map(item => ({ id: item.id, name: item.name, hex: resolveLight(item).colourHex, lux: Math.round(illuminanceAt(item, point)) }))
         .sort((a, b) => b.lux - a.lux)
+      const bounce = sceneBounce()
+      if (bounce.lux >= 1) rows.push({ id: 'bounce', name: 'Room bounce (est.)', hex: '#8b8f99', lux: Math.round(bounce.lux) })
       const total = rows.reduce((sum, row) => sum + row.lux, 0)
       const over = stopsOver(total, exposure)
       const verdict = !isFinite(over) || over < -1 ? 'under' : over > 1 ? 'over' : 'good'

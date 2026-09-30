@@ -7,7 +7,6 @@ import {
   Effect,
   Engine,
   HemisphericLight,
-  ImageProcessingConfiguration,
   Mesh,
   MeshBuilder,
   PBRMaterial,
@@ -28,7 +27,8 @@ import { getLens } from '../library/lenses'
 import { focusDistance, horizontalFov, imageWidthMm, keyLux } from '../library/optics'
 import { headingDirection, ResolvedLight, resolveLight } from '../library/photometry'
 import { CameraItem, CameraProps, LightItem, Room, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
-import { attachImaging, CameraPipeline } from './CameraPipeline'
+import { sceneBounce } from '../scene/store'
+import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 
 const DEG = Math.PI / 180
 // Widest cone the shadow map covers; wider sources still light, but only shadow inside this.
@@ -100,22 +100,27 @@ export class LiveScene {
   private subjectMaterial: PBRMaterial
   private markerMaterial: PBRMaterial
   private resizeObserver: ResizeObserver
+  private display: DisplaySettings = { exposure: 1, wbGains: [1, 1, 1] }
   private scopeCallback: ((frame: FrameCapture) => void) | null = null
   private lastScopeRead = 0
   private reading = false
 
   constructor(private canvas: HTMLCanvasElement) {
-    this.engine = new Engine(this.canvas, true)
+    // adaptToDeviceRatio: render at the display's pixel density; quality is then set by setQuality().
+    this.engine = new Engine(this.canvas, true, undefined, true)
     this.scene = new Scene(this.engine)
     this.scene.clearColor = new Color4(0, 0, 0, 1)
     this.scene.skipPointerMovePicking = true
 
-    // Render HDR and apply exposure + tonemapping as a post-process, after depth of field —
-    // the same order as light hitting a sensor.
+    // Materials output scene-linear HDR; exposure, white balance and the tone curve happen in our own
+    // display pass after depth of field — the same order as light hitting a sensor.
     const processing = this.scene.imageProcessingConfiguration
     processing.applyByPostProcess = true
-    processing.toneMappingEnabled = true
-    processing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
+    processing.toneMappingEnabled = false
+    // Babylon clamps each PBR channel to 30 in this mode. The scene is in real luminance (cd/m²), so a
+    // white card under a few hundred lux already exceeds that — the clamp flattened highlights and
+    // shifted hues. Our display pass handles highlights properly instead.
+    processing.skipFinalColorClamp = true
 
     this.orbitCamera = new ArcRotateCamera('orbit', -Math.PI / 2, 1.05, 9, new Vector3(0, 1, 0), this.scene)
     this.orbitCamera.lowerRadiusLimit = 1
@@ -125,13 +130,13 @@ export class LiveScene {
     this.orbitCamera.panningSensibility = 400
     this.orbitCamera.minZ = 0.05
     this.orbitCamera.attachControl(this.canvas, true)
-    attachImaging(this.scene, this.orbitCamera)
+    attachDisplay(this.scene, this.orbitCamera, this.display)
 
     this.ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), this.scene)
 
     this.wallMaterial = this.createSurface('walls', new Color3(0.5, 0.5, 0.5), 0.85)
     // Semi-gloss floor and slightly glossy skin give the polarizer something to cut.
-    this.floorMaterial = this.createSurface('floor', new Color3(0.42, 0.4, 0.38), 0.25)
+    this.floorMaterial = this.createSurface('floor', new Color3(0.42, 0.4, 0.38), 0.45)
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
     this.markerMaterial = this.createSurface('marker', new Color3(0.04, 0.04, 0.045), 0.6)
 
@@ -153,13 +158,24 @@ export class LiveScene {
   viewThrough(cameraId: string | null): void {
     const entry = cameraId ? this.entries.get(cameraId) : undefined
     this.viewingId = entry?.viewCamera ? cameraId : null
-    if (entry?.viewCamera && !entry.pipeline) entry.pipeline = new CameraPipeline(this.scene, entry.viewCamera)
+    if (entry?.viewCamera && !entry.pipeline) entry.pipeline = new CameraPipeline(this.scene, entry.viewCamera, this.display)
     this.scene.activeCamera = entry?.viewCamera ?? this.orbitCamera
     // Hide the camera body we're looking through so it doesn't block its own view.
     this.entries.forEach((e, id) => {
       if (e.kind === 'camera') e.root.setEnabled(id !== this.viewingId)
     })
     this.applyViewport()
+  }
+
+  // Render resolution relative to CSS pixels (1 = draft, 2 = full retina), capped at the display's DPR.
+  setQuality(scale: number): void {
+    const ratio = Math.min(scale, window.devicePixelRatio || 1)
+    this.engine.setHardwareScalingLevel(1 / ratio)
+    this.engine.resize()
+  }
+
+  getFps(): number {
+    return this.engine.getFps()
   }
 
   // The recorded image area within the canvas (CSS pixels, top-left origin), e.g. a 16:9 letterbox.
@@ -183,8 +199,10 @@ export class LiveScene {
     // Maps the lux the camera exposes as middle grey to mid-grey on screen. Babylon's PBR diffuse
     // includes the 1/π of a Lambertian surface, hence the π.
     const key = settings ? keyLux(settings) : 500
-    this.scene.imageProcessingConfiguration.exposure = Math.PI / key
-    const wb = whiteBalanceGain(settings)
+    this.display.exposure = Math.PI / key
+    // White balance is applied to the whole image in the display pass (like a camera), so emitters,
+    // bounce and ambient are all balanced consistently.
+    this.display.wbGains = whiteBalanceGain(settings)
 
     // Polarizer: cuts specular reflections as the ring turns (0° = none cut, 90° = most cut).
     const pol = settings?.polarizer.fitted ? Math.cos(settings.polarizer.angle * DEG) ** 2 : 1
@@ -193,8 +211,11 @@ export class LiveScene {
 
     // Equipment stays readable at any exposure.
     this.markerMaterial.emissiveColor = new Color3(0.035, 0.035, 0.04).scale(key / Math.PI)
-    this.ambient.intensity = doc.ambientLux
-    this.ambient.diffuse = new Color3(wb[0], wb[1], wb[2])
+    // Ambient = estimated room bounce (tinted by the lights) + a little base fill.
+    const bounce = sceneBounce(doc)
+    this.ambient.intensity = bounce.lux + doc.ambientLux
+    this.ambient.diffuse = new Color3(bounce.colour[0], bounce.colour[1], bounce.colour[2])
+    this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
 
     const seen = new Set<string>()
     doc.items.forEach(item => {
@@ -209,7 +230,7 @@ export class LiveScene {
         entry = this.createEntry(item, entryKey)
         this.entries.set(item.id, entry)
       }
-      this.updateEntry(entry, item, doc, wb)
+      this.updateEntry(entry, item, doc)
     })
 
     this.entries.forEach((_entry, id) => {
@@ -506,11 +527,11 @@ export class LiveScene {
     entry.viewCamera = viewCamera
   }
 
-  private updateEntry(entry: Entry, item: SceneItem, doc: SceneDoc, wb: RGB): void {
+  private updateEntry(entry: Entry, item: SceneItem, doc: SceneDoc): void {
     entry.root.position.set(item.x, 0, item.z)
     entry.root.rotation.y = item.rotationY * DEG
     if (item.kind === 'subject') this.updateSubject(entry, item)
-    if (item.kind === 'light') this.updateLight(entry, item, wb)
+    if (item.kind === 'light') this.updateLight(entry, item)
     if (item.kind === 'camera') this.updateCamera(entry, item, doc)
   }
 
@@ -523,7 +544,7 @@ export class LiveScene {
     nose.position.set(0, item.height - 0.12, 0.13)
   }
 
-  private updateLight(entry: Entry, item: LightItem, wb: RGB): void {
+  private updateLight(entry: Entry, item: LightItem): void {
     const resolved = resolveLight(item)
     const verticalTube = resolved.emitter.shape === 'tube' && item.props.orientation === 'vertical'
     const tilt = verticalTube ? 0 : item.props.tilt
@@ -536,9 +557,8 @@ export class LiveScene {
       tube.rotation.z = verticalTube ? 0 : Math.PI / 2
     }
 
-    // Light colour as the camera sees it (white-balanced).
     const [r, g, b] = resolved.colour
-    const colour = new Color3(r * wb[0], g * wb[1], b * wb[2])
+    const colour = new Color3(r, g, b)
     const light = entry.light as ShadowLight
     light.position.set(item.x, item.height, item.z)
     light.intensity = resolved.candela

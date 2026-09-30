@@ -160,3 +160,43 @@ export function nearestStop(n: number): number {
 export function stopsOver(lux: number, camera: CameraProps): number {
   return lux > 0 ? Math.log2(lux / keyLux(camera)) : -Infinity
 }
+
+// ── Bounce light ─────────────────────────────────────────────────────────────
+// Real rooms fill their shadows with light reflected off walls, floor and ceiling. Without global
+// illumination we estimate it with the integrating-sphere approximation for a room:
+//   E_bounce ≈ Φ · ρ / (A · (1 − ρ))
+// Φ = total luminous flux from the lights (lm), A = room surface area (m²), ρ = mean reflectance.
+export const ROOM_REFLECTANCE = 0.45
+
+// Luminous flux (lm) leaving a light, from its on-axis intensity and beam.
+export function luminousFlux(item: LightItem): number {
+  const light = resolveLight(item)
+  if (light.omni) return light.candela * 4 * Math.PI
+  // Solid angle of the half-power cone, widened a little for the soft falloff outside it.
+  const half = Math.min((light.beam / 2) * 1.15, 90) * DEG
+  return light.candela * 2 * Math.PI * (1 - Math.cos(half))
+}
+
+export interface Bounce {
+  lux: number
+  colour: RGB // luminance-normalised linear RGB
+}
+
+export function bounceLight(lights: LightItem[], surfaceArea: number): Bounce {
+  let flux = 0
+  const tint: RGB = [0, 0, 0]
+  lights.forEach(item => {
+    const phi = luminousFlux(item)
+    const c = resolveLight(item).colour
+    flux += phi
+    tint[0] += c[0] * phi
+    tint[1] += c[1] * phi
+    tint[2] += c[2] * phi
+  })
+  if (flux <= 0 || surfaceArea <= 0) return { lux: 0, colour: [1, 1, 1] }
+  const lum = 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2] || 1
+  return {
+    lux: (flux * ROOM_REFLECTANCE) / (surfaceArea * (1 - ROOM_REFLECTANCE)),
+    colour: [tint[0] / lum, tint[1] / lum, tint[2] / lum]
+  }
+}

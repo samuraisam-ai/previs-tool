@@ -151,7 +151,7 @@ import { getLens, LENSES } from '../../library/lenses'
 import { angleFromSpeed, dofLimits, focusDistance, formatDistance, formatShutter, frameRate } from '../../library/optics'
 import { illuminanceAt, stopsOver, subjectMeterPoint, T_STOPS } from '../../library/photometry'
 import { FrameCapture } from '../../live/LiveScene'
-import { getItem, scene } from '../../scene/store'
+import { getItem, scene, sceneBounce } from '../../scene/store'
 import { CameraItem, FrameLines, ScopeId, SubjectItem } from '../../scene/types'
 
 type ParamId = 'shutter' | 'iris' | 'iso' | 'nd' | 'pol' | 'wb' | 'tint' | 'lens' | 'focus' | 'tilt'
@@ -296,7 +296,7 @@ export default defineComponent({
       const subject = subjects.value.find(s => s.id === p.value.focus.subjectId) ?? subjects.value[0]
       if (!subject) return -Infinity
       const point = subjectMeterPoint(subject)
-      const lux = scene.items.reduce((sum, i) => (i.kind === 'light' ? sum + illuminanceAt(i, point) : sum), 0)
+      const lux = scene.items.reduce((sum, i) => (i.kind === 'light' ? sum + illuminanceAt(i, point) : sum), sceneBounce().lux)
       return stopsOver(lux, p.value)
     })
     const mmText = computed(() => {
