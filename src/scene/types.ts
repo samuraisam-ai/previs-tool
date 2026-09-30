@@ -5,10 +5,17 @@
 export type ItemKind = 'subject' | 'light' | 'camera'
 
 export interface LightProps {
-  intensity: number
-  color: string
-  angle: number // beam angle in degrees
+  fixtureId: string
+  modifierId: string
+  dimmer: number // 0–100 %
+  cct: number // Kelvin
+  gm: number // -100 green … +100 magenta
+  mode: 'cct' | 'hsi'
+  hue: number // 0–360
+  sat: number // 0–100
+  zoom: number // beam angle for fresnel / zoom projection
   tilt: number // degrees below horizontal
+  orientation: 'vertical' | 'horizontal' // tubes
 }
 
 export interface CameraProps {
@@ -36,10 +43,19 @@ export interface Room {
   height: number
 }
 
+// Camera exposure used by the Live View and the light meter. shutter is in seconds.
+export interface Exposure {
+  iso: number
+  tStop: number
+  shutter: number
+}
+
 export interface SceneDoc {
   room: Room
   items: SceneItem[]
   selectedId: string | null
+  exposure: Exposure
+  ambientLux: number
 }
 
 export const SENSOR_WIDTH_MM = 36

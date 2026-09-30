@@ -5,38 +5,43 @@ import {
   Color3,
   Color4,
   Engine,
+  GlowLayer,
   HemisphericLight,
+  ImageProcessingConfiguration,
   Mesh,
   MeshBuilder,
   PBRMaterial,
+  PointLight,
   Scene,
   ShadowGenerator,
+  ShadowLight,
   SpotLight,
   StandardMaterial,
   TransformNode,
   UniversalCamera,
   Vector3
 } from '@babylonjs/core'
+import { headingDirection, keyLuxFor, ResolvedLight, resolveLight } from '../library/photometry'
 import { CameraItem, horizontalFov, LightItem, Room, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
 
 const DEG = Math.PI / 180
-
-// Unit vector for a plan heading (0 = +z, clockwise from above) tilted down by `tilt` degrees.
-function headingDirection(rotationY: number, tilt = 0): Vector3 {
-  const h = rotationY * DEG
-  const t = tilt * DEG
-  return new Vector3(Math.sin(h) * Math.cos(t), -Math.sin(t), Math.cos(h) * Math.cos(t))
-}
+// Widest cone the shadow map covers; wider sources still light, but only shadow inside this.
+const MAX_SHADOW_CONE = 120
 
 interface Entry {
   kind: SceneItem['kind']
+  key: string
   root: TransformNode
-  light?: SpotLight
-  lightBody?: Mesh
+  head?: TransformNode
+  light?: ShadowLight
   shadows?: ShadowGenerator
+  glowMaterial?: StandardMaterial
+  stand?: Mesh
   casters?: AbstractMesh[]
   viewCamera?: UniversalCamera
 }
+
+const lightKey = (item: LightItem) => `${item.props.fixtureId}|${item.props.modifierId}|${item.props.orientation}`
 
 // Read-only 3D view of a SceneDoc. The scene is rebuilt/updated from the document via sync();
 // nothing in here is pickable — the only interactive thing is the orbit camera.
@@ -44,12 +49,17 @@ export class LiveScene {
   private engine: Engine
   public scene: Scene
   private orbitCamera: ArcRotateCamera
+  private ambient: HemisphericLight
+  private glow: GlowLayer
   private entries = new Map<string, Entry>()
   private roomRoot: TransformNode | null = null
   private roomKey = ''
   private viewingId: string | null = null
   private surfaceMaterial: PBRMaterial
   private subjectMaterial: PBRMaterial
+  private markerMaterial: StandardMaterial
+  // Emitters and equipment are drawn at fixed brightness, independent of camera exposure.
+  private unexposed: ImageProcessingConfiguration
   private resizeObserver: ResizeObserver
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -57,6 +67,14 @@ export class LiveScene {
     this.scene = new Scene(this.engine)
     this.scene.clearColor = new Color4(0.02, 0.02, 0.03, 1)
     this.scene.skipPointerMovePicking = true
+
+    const processing = this.scene.imageProcessingConfiguration
+    processing.toneMappingEnabled = true
+    processing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES
+
+    this.unexposed = new ImageProcessingConfiguration()
+    this.unexposed.toneMappingEnabled = false
+    this.unexposed.exposure = 1
 
     this.orbitCamera = new ArcRotateCamera('orbit', -Math.PI / 2, 1.05, 9, new Vector3(0, 1, 0), this.scene)
     this.orbitCamera.lowerRadiusLimit = 1
@@ -67,12 +85,14 @@ export class LiveScene {
     this.orbitCamera.minZ = 0.05
     this.orbitCamera.attachControl(this.canvas, true)
 
-    // A touch of ambient so unlit areas read as dark, not black.
-    const ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), this.scene)
-    ambient.intensity = 0.04
+    this.ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), this.scene)
 
-    this.surfaceMaterial = this.createMatte('surface', new Color3(0.55, 0.55, 0.55))
-    this.subjectMaterial = this.createMatte('subject', new Color3(0.75, 0.62, 0.52))
+    this.glow = new GlowLayer('glow', this.scene, { mainTextureSamples: 4 })
+    this.glow.intensity = 0.6
+
+    this.surfaceMaterial = this.createMatte('surface', new Color3(0.5, 0.5, 0.5))
+    this.subjectMaterial = this.createMatte('subject', new Color3(0.72, 0.58, 0.48))
+    this.markerMaterial = this.createFlat('marker', new Color3(0.13, 0.13, 0.15))
 
     this.engine.runRenderLoop(() => this.scene.render())
     this.resizeObserver = new ResizeObserver(() => this.engine.resize())
@@ -97,17 +117,22 @@ export class LiveScene {
 
   sync(doc: SceneDoc): void {
     this.syncRoom(doc.room)
+    // Exposure maps the lux that the camera settings expose as middle grey to mid-grey on screen.
+    // Babylon's PBR diffuse includes the 1/π of a Lambertian surface, hence the π.
+    this.scene.imageProcessingConfiguration.exposure = Math.PI / keyLuxFor(doc.exposure)
+    this.ambient.intensity = doc.ambientLux
 
     const seen = new Set<string>()
     doc.items.forEach(item => {
       seen.add(item.id)
       let entry = this.entries.get(item.id)
-      if (entry && entry.kind !== item.kind) {
+      const key = item.kind === 'light' ? lightKey(item) : item.kind
+      if (entry && entry.key !== key) {
         this.removeEntry(item.id)
         entry = undefined
       }
       if (!entry) {
-        entry = this.createEntry(item)
+        entry = this.createEntry(item, key)
         this.entries.set(item.id, entry)
       }
       this.updateEntry(entry, item)
@@ -126,11 +151,22 @@ export class LiveScene {
     material.albedoColor = color
     material.metallic = 0
     material.roughness = 0.85
-    material.maxSimultaneousLights = 8
+    material.maxSimultaneousLights = 16
+    // glTF falloff: physical 1/d² with a controllable inner/outer spot cone (hard projection edges,
+    // soft softbox edges). Babylon's "physical" mode would replace every cone with a soft Gaussian.
+    material.useGLTFLightFalloff = true
     return material
   }
 
-  private unpickable(mesh: AbstractMesh, parent: TransformNode): AbstractMesh {
+  private createFlat(name: string, color: Color3): StandardMaterial {
+    const material = new StandardMaterial(name, this.scene)
+    material.disableLighting = true
+    material.emissiveColor = color
+    material.imageProcessingConfiguration = this.unexposed
+    return material
+  }
+
+  private unpickable<T extends AbstractMesh>(mesh: T, parent: TransformNode): T {
     mesh.isPickable = false
     mesh.parent = parent
     return mesh
@@ -170,9 +206,9 @@ export class LiveScene {
     this.roomRoot = root
   }
 
-  private createEntry(item: SceneItem): Entry {
+  private createEntry(item: SceneItem, key: string): Entry {
     const root = new TransformNode(item.id, this.scene)
-    const entry: Entry = { kind: item.kind, root }
+    const entry: Entry = { kind: item.kind, key, root }
     if (item.kind === 'subject') this.buildSubject(entry)
     if (item.kind === 'light') this.buildLight(entry, item)
     if (item.kind === 'camera') this.buildCamera(entry)
@@ -185,7 +221,8 @@ export class LiveScene {
     entry.shadows?.dispose()
     entry.light?.dispose()
     entry.viewCamera?.dispose()
-    entry.root.dispose(false, true)
+    entry.glowMaterial?.dispose()
+    entry.root.dispose(false, false)
     this.entries.delete(id)
     if (this.viewingId === id) this.viewThrough(null)
   }
@@ -205,29 +242,123 @@ export class LiveScene {
   }
 
   private buildLight(entry: Entry, item: LightItem): void {
-    const light = new SpotLight(item.id, Vector3.Zero(), new Vector3(0, -1, 0), Math.PI / 3, 2, this.scene)
-    light.shadowMinZ = 0.1
-    light.shadowMaxZ = 20
+    const resolved = resolveLight(item)
+    const head = new TransformNode('head', this.scene)
+    head.parent = entry.root
+    entry.head = head
 
-    const shadows = new ShadowGenerator(1024, light)
-    shadows.usePercentageCloserFiltering = true
-    shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM
-    shadows.bias = 0.0005
-
-    // Visual only: a glowing head on a stand. Not a shadow caster so it never blocks its own beam.
-    const bodyMaterial = new StandardMaterial(`${item.id}-mat`, this.scene)
-    bodyMaterial.disableLighting = true
-    const lightBody = MeshBuilder.CreateCylinder('lightHead', { height: 0.25, diameterTop: 0.14, diameterBottom: 0.28 }, this.scene)
-    lightBody.material = bodyMaterial
-    this.unpickable(lightBody, entry.root)
-
-    const stand = MeshBuilder.CreateCylinder('stand', { height: 1, diameter: 0.03 }, this.scene)
-    stand.material = this.surfaceMaterial
-    this.unpickable(stand, entry.root)
-
+    let light: ShadowLight
+    let shadows: ShadowGenerator
+    if (resolved.omni) {
+      light = new PointLight(item.id, Vector3.Zero(), this.scene)
+      shadows = new ShadowGenerator(1024, light)
+      shadows.usePoissonSampling = true
+    } else {
+      light = new SpotLight(item.id, Vector3.Zero(), new Vector3(0, -1, 0), Math.PI / 3, 1, this.scene)
+      shadows = new ShadowGenerator(2048, light)
+      // Contact-hardening shadows: penumbra grows with the source size (softbox vs bare COB).
+      shadows.useContactHardeningShadow = true
+      shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM
+      shadows.contactHardeningLightSizeUVRatio = Math.min(Math.max(resolved.sourceSize * 0.12, 0.01), 0.3)
+    }
+    light.shadowMinZ = 0.05
+    light.shadowMaxZ = 25
+    shadows.bias = 0.0008
     entry.light = light
-    entry.lightBody = lightBody
     entry.shadows = shadows
+
+    entry.glowMaterial = this.createFlat(`${item.id}-glow`, Color3.White())
+    this.buildEmitter(entry, resolved)
+
+    if (resolved.emitter.shape !== 'bulb') {
+      const stand = MeshBuilder.CreateCylinder('stand', { height: 1, diameter: 0.03 }, this.scene)
+      stand.material = this.markerMaterial
+      entry.stand = this.unpickable(stand, entry.root)
+    }
+  }
+
+  // Builds the visible fixture in head space: the emitting face sits at the origin facing +z,
+  // housings extend behind it (-z).
+  private buildEmitter(entry: Entry, resolved: ResolvedLight): void {
+    const head = entry.head as TransformNode
+    const glowMaterial = entry.glowMaterial as StandardMaterial
+    const { shape, w, h, depth } = resolved.emitter
+    const glowing: Mesh[] = []
+    const body: Mesh[] = []
+    const faceForward = (mesh: Mesh) => { mesh.rotation.y = Math.PI; return mesh }
+    const alongZ = (mesh: Mesh, length: number) => {
+      mesh.rotation.x = Math.PI / 2
+      mesh.position.z = -length / 2
+      return mesh
+    }
+
+    switch (shape) {
+      case 'rect': {
+        const face = faceForward(MeshBuilder.CreatePlane('face', { width: w, height: h }, this.scene))
+        face.position.z = 0.005
+        glowing.push(face)
+        const box = MeshBuilder.CreateBox('housing', { width: w, height: h, depth }, this.scene)
+        box.position.z = -depth / 2
+        body.push(box)
+        break
+      }
+      case 'octa':
+      case 'dish':
+      case 'reflector': {
+        const tessellation = shape === 'octa' ? 8 : 32
+        const shell = MeshBuilder.CreateCylinder('shell', { height: depth, diameterTop: w, diameterBottom: Math.min(0.15, w), tessellation, cap: Mesh.NO_CAP, sideOrientation: Mesh.DOUBLESIDE }, this.scene)
+        body.push(alongZ(shell, depth))
+        const face = faceForward(MeshBuilder.CreateDisc('face', { radius: w / 2 - 0.005, tessellation }, this.scene))
+        face.position.z = -0.01
+        glowing.push(face)
+        break
+      }
+      case 'sphere': {
+        const sphere = MeshBuilder.CreateSphere('lantern', { diameter: w, segments: 16 }, this.scene)
+        glowing.push(sphere)
+        break
+      }
+      case 'lens': {
+        const barrel = MeshBuilder.CreateCylinder('barrel', { height: depth, diameter: w, tessellation: 24 }, this.scene)
+        body.push(alongZ(barrel, depth))
+        const face = faceForward(MeshBuilder.CreateDisc('lens', { radius: w * 0.4, tessellation: 24 }, this.scene))
+        face.position.z = 0.002
+        glowing.push(face)
+        break
+      }
+      case 'cob': {
+        const face = faceForward(MeshBuilder.CreateDisc('cob', { radius: 0.03, tessellation: 16 }, this.scene))
+        face.position.z = 0.002
+        glowing.push(face)
+        break
+      }
+      case 'tube': {
+        glowing.push(MeshBuilder.CreateCylinder('tube', { height: w, diameter: 0.035, tessellation: 12 }, this.scene))
+        break
+      }
+      case 'bulb': {
+        glowing.push(MeshBuilder.CreateSphere('bulb', { diameter: 0.07, segments: 12 }, this.scene))
+        break
+      }
+    }
+
+    // COB fixtures get their head body behind the modifier.
+    if (resolved.fixture.shape.type === 'cob') {
+      const size = resolved.fixture.shape.size
+      const cobBody = MeshBuilder.CreateBox('fixture', { width: size * 0.8, height: size * 0.8, depth: size }, this.scene)
+      cobBody.position.z = -(shape === 'sphere' ? w / 2 : depth) - size / 2
+      body.push(cobBody)
+    }
+
+    glowing.forEach(mesh => {
+      mesh.material = glowMaterial
+      this.unpickable(mesh, head)
+      this.glow.addIncludedOnlyMesh(mesh)
+    })
+    body.forEach(mesh => {
+      mesh.material = this.markerMaterial
+      this.unpickable(mesh, head)
+    })
   }
 
   private buildCamera(entry: Entry): void {
@@ -236,11 +367,8 @@ export class LiveScene {
     lens.rotation.x = Math.PI / 2
     lens.position.z = 0.16
     const tripod = MeshBuilder.CreateCylinder('tripod', { height: 1, diameter: 0.03 }, this.scene)
-    const material = new StandardMaterial('camMat', this.scene)
-    material.diffuseColor = new Color3(0.15, 0.15, 0.17)
-    material.emissiveColor = new Color3(0.08, 0.08, 0.1)
     ;[body, lens, tripod].forEach(mesh => {
-      mesh.material = material
+      mesh.material = this.markerMaterial
       this.unpickable(mesh, entry.root)
     })
     lens.parent = body
@@ -269,23 +397,45 @@ export class LiveScene {
   }
 
   private updateLight(entry: Entry, item: LightItem): void {
-    const light = entry.light as SpotLight
-    const { intensity, color, angle, tilt } = item.props
-    light.position.set(item.x, item.height, item.z)
-    light.direction = headingDirection(item.rotationY, tilt)
-    light.angle = angle * DEG
-    light.intensity = intensity
-    light.diffuse = Color3.FromHexString(color)
-    light.specular = light.diffuse
+    const resolved = resolveLight(item)
+    const verticalTube = resolved.emitter.shape === 'tube' && item.props.orientation === 'vertical'
+    const tilt = verticalTube ? 0 : item.props.tilt
 
-    const head = entry.lightBody as Mesh
+    const head = entry.head as TransformNode
     head.position.y = item.height
-    head.rotation.x = Math.PI / 2 + tilt * DEG
-    ;(head.material as StandardMaterial).emissiveColor = light.diffuse
+    head.rotation.x = tilt * DEG
+    if (resolved.emitter.shape === 'tube') {
+      const tube = head.getChildMeshes(true)[0]
+      tube.rotation.z = verticalTube ? 0 : Math.PI / 2
+    }
 
-    const stand = entry.root.getChildMeshes(true).find(mesh => mesh.name === 'stand') as Mesh
-    stand.scaling.y = item.height
-    stand.position.y = item.height / 2
+    const [r, g, b] = resolved.colour
+    const colour = new Color3(r, g, b)
+    const light = entry.light as ShadowLight
+    light.position.set(item.x, item.height, item.z)
+    light.intensity = resolved.candela
+    light.diffuse = colour
+    light.specular = colour
+    if (light instanceof SpotLight) {
+      const [dx, dy, dz] = headingDirection(item.rotationY, tilt)
+      light.direction = new Vector3(dx, dy, dz)
+      light.angle = resolved.coneAngle * DEG
+      light.innerAngle = resolved.innerAngle * DEG
+      light.shadowAngleScale = Math.min(1, MAX_SHADOW_CONE / resolved.coneAngle)
+    }
+
+    // Emitter glow follows colour and dimmer, but not camera exposure.
+    const max = Math.max(...resolved.colour)
+    const level = item.props.dimmer > 0 ? 0.25 + 0.75 * (item.props.dimmer / 100) : 0.05
+    ;(entry.glowMaterial as StandardMaterial).emissiveColor = colour.scale(level / max)
+
+    if (entry.stand) {
+      const standHeight = Math.max(item.height - 0.1, 0.05)
+      entry.stand.scaling.y = standHeight
+      entry.stand.position.y = standHeight / 2
+      // Keep the stand under the fixture body, behind the face.
+      entry.stand.position.z = -Math.min(resolved.emitter.depth, 0.3)
+    }
   }
 
   private updateCamera(entry: Entry, item: CameraItem): void {

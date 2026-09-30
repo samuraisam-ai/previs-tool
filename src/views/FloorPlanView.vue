@@ -3,9 +3,10 @@
     <div class="canvas-area">
       <div class="toolbar">
         <button @click="add('subject')">+ Subject</button>
-        <button @click="add('light')">+ Light</button>
+        <button :class="{ on: showLibrary }" @click="showLibrary = !showLibrary">+ Light</button>
         <button @click="add('camera')">+ Camera</button>
       </div>
+      <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
 
       <!-- SVG units are metres. svg y = -world z, so "up" on the plan is +z in 3D. -->
       <svg
@@ -34,8 +35,19 @@
         >
           <g :transform="`rotate(${item.rotationY})`">
             <template v-if="item.kind === 'light'">
-              <path class="beam" :d="wedge(item.props.angle, 2.2)" :fill="item.props.color" pointer-events="none" />
-              <rect class="body" x="-0.16" y="-0.1" width="0.32" height="0.2" rx="0.03" :fill="item.props.color" @pointerdown.stop="startMove($event, item)" />
+              <circle v-if="visuals[item.id].omni" class="beam" :r="visuals[item.id].throw" :fill="visuals[item.id].hex" pointer-events="none" />
+              <path
+                v-else
+                :class="['beam', { hard: visuals[item.id].hard }]"
+                :d="wedge(visuals[item.id].beam, visuals[item.id].throw)"
+                :fill="visuals[item.id].hex"
+                :stroke="visuals[item.id].hex"
+                pointer-events="none"
+              />
+              <g class="fixture" @pointerdown.stop="startMove($event, item)">
+                <circle class="hit" r="0.25" />
+                <path v-for="(part, i) in visuals[item.id].parts" :key="i" :d="part.d" :class="part.glow ? 'glow' : 'body'" :fill="part.glow ? visuals[item.id].hex : undefined" />
+              </g>
             </template>
 
             <template v-else-if="item.kind === 'camera'">
@@ -68,17 +80,27 @@
         <label>Aim (°) <input type="number" step="5" v-model.number="selected.rotationY" /></label>
         <div class="readout">x {{ selected.x.toFixed(2) }} m · z {{ selected.z.toFixed(2) }} m</div>
 
-        <template v-if="selected.kind === 'light'">
-          <label>Intensity <span>{{ selected.props.intensity }}</span>
-            <input type="range" min="0" max="200" step="1" v-model.number="selected.props.intensity" />
-          </label>
-          <label>Beam angle <span>{{ selected.props.angle }}°</span>
-            <input type="range" min="5" max="120" step="1" v-model.number="selected.props.angle" />
-          </label>
-          <label>Tilt down <span>{{ selected.props.tilt }}°</span>
-            <input type="range" min="-30" max="90" step="1" v-model.number="selected.props.tilt" />
-          </label>
-          <label>Colour <input type="color" v-model="selected.props.color" /></label>
+        <LightProperties v-if="selected.kind === 'light'" :id="selected.id" />
+
+        <template v-if="selected.kind === 'subject' && meter">
+          <h4 class="section">Light meter (face)</h4>
+          <div class="meter-total">
+            <strong>{{ meter.total.toLocaleString() }} lux</strong>
+            <span>≈ T{{ meter.stop }} at ISO {{ exposure.iso }}, 1/{{ Math.round(1 / exposure.shutter) }}</span>
+          </div>
+          <div class="meter-vs" :class="meter.verdict">{{ meter.vsText }}</div>
+          <div class="meter-row" v-for="row in meter.rows" :key="row.id">
+            <i class="swatch" :style="{ background: row.hex }"></i>{{ row.name }} <span>{{ row.lux.toLocaleString() }} lux</span>
+          </div>
+          <div class="exposure">
+            <label>ISO
+              <select v-model.number="exposure.iso"><option v-for="iso in isos" :key="iso" :value="iso">{{ iso }}</option></select>
+            </label>
+            <label>Camera T-stop
+              <select v-model.number="exposure.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
+            </label>
+          </div>
+          <div class="readout">Direct light only; walls, bounce and shadows aren't counted.</div>
         </template>
 
         <template v-if="selected.kind === 'camera'">
@@ -98,8 +120,13 @@
 
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import LightLibrary from '../components/LightLibrary.vue'
+import LightProperties from '../components/LightProperties.vue'
+import {
+  illuminanceAt, ISOS, nearestStop, ResolvedLight, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor
+} from '../library/photometry'
 import { addItem, getItem, removeItem, scene, select } from '../scene/store'
-import { horizontalFov, ItemKind, SceneItem } from '../scene/types'
+import { horizontalFov, ItemKind, LightItem, SceneItem } from '../scene/types'
 
 const MARGIN = 1.5
 const MOVE_SNAP = 0.1
@@ -108,10 +135,72 @@ const ROTATE_SNAP = 5
 const snap = (value: number, step: number) => Math.round(value / step) * step
 const round = (value: number) => Math.round(value * 1000) / 1000
 
+interface LightVisual {
+  omni: boolean
+  hard: boolean
+  beam: number
+  throw: number
+  hex: string
+  parts: Array<{ d: string; glow: boolean }>
+}
+
+const rectPath = (x: number, y: number, w: number, h: number) => `M ${x} ${y} h ${w} v ${h} h ${-w} Z`
+const circlePath = (r: number) => `M ${-r} 0 a ${r} ${r} 0 1 0 ${2 * r} 0 a ${r} ${r} 0 1 0 ${-2 * r} 0`
+
+// Top-down outline of the fixture at true size. The emitting face is at y = 0 facing up (-y);
+// housings extend behind it (+y).
+function fixtureParts(light: ResolvedLight, orientation: LightItem['props']['orientation']): LightVisual['parts'] {
+  const { shape, w, depth } = light.emitter
+  const parts: LightVisual['parts'] = []
+  const face = (width: number) => parts.push({ d: rectPath(-width / 2, -0.035, width, 0.035), glow: true })
+  switch (shape) {
+    case 'rect':
+      if (light.fixture.shape.type === 'rect' && light.modifier.kind !== 'panel-softbox') {
+        parts.push({ d: rectPath(-w / 2, 0, w, Math.max(depth, 0.05)), glow: false })
+      } else {
+        const back = Math.min(0.2, w)
+        parts.push({ d: `M ${-w / 2} 0 L ${w / 2} 0 L ${back / 2} ${depth} L ${-back / 2} ${depth} Z`, glow: false })
+      }
+      face(w)
+      break
+    case 'octa':
+    case 'dish':
+    case 'reflector': {
+      const back = Math.min(0.15, w)
+      parts.push({ d: `M ${-w / 2} 0 L ${w / 2} 0 L ${back / 2} ${depth} L ${-back / 2} ${depth} Z`, glow: false })
+      face(w)
+      break
+    }
+    case 'sphere':
+      parts.push({ d: circlePath(w / 2), glow: true })
+      break
+    case 'lens':
+      parts.push({ d: rectPath(-w / 2, 0, w, depth), glow: false })
+      face(w * 0.8)
+      break
+    case 'cob':
+      face(0.1)
+      break
+    case 'tube':
+      parts.push({ d: orientation === 'vertical' ? circlePath(0.045) : rectPath(-w / 2, -0.025, w, 0.05), glow: true })
+      break
+    case 'bulb':
+      parts.push({ d: circlePath(0.05), glow: true })
+      break
+  }
+  if (light.fixture.shape.type === 'cob') {
+    const size = light.fixture.shape.size
+    const offset = shape === 'sphere' ? w / 2 : depth
+    parts.push({ d: rectPath(-size * 0.4, offset, size * 0.8, size), glow: false })
+  }
+  return parts
+}
+
 type Drag = { mode: 'move' | 'rotate'; id: string; offsetX: number; offsetZ: number }
 
 export default defineComponent({
   name: 'FloorPlanView',
+  components: { LightLibrary, LightProperties },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -150,6 +239,49 @@ export default defineComponent({
       return `M 0 0 L ${x} ${y} A ${length} ${length} 0 0 0 ${-x} ${y} Z`
     }
     const fovDegrees = (focalLength: number) => horizontalFov(focalLength) * 180 / Math.PI
+
+    const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))
+
+    const visuals = computed(() => {
+      const result: Record<string, LightVisual> = {}
+      lights.value.forEach(item => {
+        const light = resolveLight(item)
+        result[item.id] = {
+          omni: light.omni,
+          hard: light.hardEdge,
+          beam: light.beam,
+          // Beam drawn out to where it falls to ~400 lux.
+          throw: Math.min(Math.max(Math.sqrt(light.candela / 400), 0.6), 6),
+          hex: light.colourHex,
+          parts: fixtureParts(light, item.props.orientation)
+        }
+      })
+      return result
+    })
+
+    const exposure = scene.exposure
+    const meter = computed(() => {
+      const subject = selected.value
+      if (!subject || subject.kind !== 'subject') return null
+      const point = subjectMeterPoint(subject)
+      const rows = lights.value
+        .map(item => ({ id: item.id, name: item.name, hex: resolveLight(item).colourHex, lux: Math.round(illuminanceAt(item, point)) }))
+        .sort((a, b) => b.lux - a.lux)
+      const total = rows.reduce((sum, row) => sum + row.lux, 0)
+      const over = stopsOver(total, exposure)
+      const verdict = !isFinite(over) || over < -1 ? 'under' : over > 1 ? 'over' : 'good'
+      const vsText = !isFinite(over)
+        ? 'No direct light on the face'
+        : Math.abs(over) < 0.17 ? `Exposed right at T${exposure.tStop}`
+          : `${over > 0 ? '+' : '−'}${Math.abs(over).toFixed(1)} stops ${over > 0 ? 'over' : 'under'} at T${exposure.tStop}`
+      return { rows, total, stop: nearestStop(tStopFor(total, exposure)), verdict, vsText }
+    })
+
+    const showLibrary = ref(false)
+    const addLight = (fixtureId: string) => {
+      addItem('light', fixtureId)
+      showLibrary.value = false
+    }
 
     const toWorld = (event: PointerEvent) => {
       const el = svg.value as SVGSVGElement
@@ -212,7 +344,7 @@ export default defineComponent({
 
     return {
       svg, room, items, selectedId, selected, bounds, viewBox, gridX, gridY, isMajor,
-      wedge, fovDegrees, startMove, startRotate, onPointerMove, endDrag, add, remove, select,
+      wedge, fovDegrees, visuals, meter, exposure, showLibrary, addLight, isos: ISOS, tStops: T_STOPS, startMove, startRotate, onPointerMove, endDrag, add, remove, select,
       kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera' },
       focalLengths: [14, 18, 24, 35, 50, 85, 100, 135]
     }
@@ -265,7 +397,27 @@ svg {
 .item.selected .body { stroke: var(--accent); stroke-width: 0.04; }
 .subject .body { fill: #c89f82; }
 .subject .nose { fill: #c89f82; }
-.light .beam { opacity: 0.16; }
+.light .beam { opacity: 0.12; stroke: none; }
+.light .beam.hard { opacity: 0.2; stroke-width: 0.02; stroke-opacity: 0.8; }
+.light .fixture { cursor: grab; }
+.light .fixture .hit { fill: transparent; }
+.light .fixture .body { fill: #3a3d46; stroke: #0d0e11; stroke-width: 0.015; }
+.light .fixture .glow { stroke: #0d0e11; stroke-width: 0.01; }
+.light.selected .fixture .body { stroke: var(--accent); stroke-width: 0.03; }
+.toolbar button.on { background: var(--accent); border-color: var(--accent); color: #1a1a1a; }
+.section { margin-top: 8px !important; padding-top: 12px; border-top: 1px solid var(--line); }
+.meter-total { display: flex; flex-direction: column; gap: 2px; }
+.meter-total strong { font-size: 20px; }
+.meter-total span, .meter-row span { color: var(--muted); }
+.meter-vs { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #23252c; }
+.meter-vs.good { color: #8fdc8f; }
+.meter-vs.over { color: #ffb547; }
+.meter-vs.under { color: #7fb2ff; }
+.meter-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.meter-row span { margin-left: auto; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.exposure { display: flex; gap: 8px; }
+.exposure label { flex: 1; }
 .camera .body, .camera .lens { fill: #8a8f9c; cursor: grab; }
 .camera .fov { fill: rgba(120, 170, 255, 0.07); stroke: rgba(120, 170, 255, 0.6); stroke-width: 0.015; stroke-dasharray: 0.08 0.06; }
 .rotate-handle line { stroke: var(--accent); stroke-width: 0.02; }

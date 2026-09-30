@@ -9,6 +9,14 @@
           <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }} · {{ cam.props.focalLength }}mm</option>
         </select>
       </label>
+      <label>
+        ISO
+        <select v-model.number="exposure.iso"><option v-for="iso in isos" :key="iso" :value="iso">{{ iso }}</option></select>
+      </label>
+      <label>
+        T-stop
+        <select v-model.number="exposure.tStop"><option v-for="t in tStops" :key="t" :value="t">T{{ t }}</option></select>
+      </label>
       <span class="hint">{{ viewId ? 'Locked to camera — move it in the Floor Plan' : 'Drag to orbit · right-drag to pan · scroll to zoom' }}</span>
     </div>
   </div>
@@ -16,6 +24,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ISOS, T_STOPS } from '../library/photometry'
 import { LiveScene } from '../live/LiveScene'
 import { scene } from '../scene/store'
 import { CameraItem } from '../scene/types'
@@ -42,7 +51,7 @@ export default defineComponent({
 
     onBeforeUnmount(() => live?.dispose())
 
-    return { canvas, viewId, cameras }
+    return { canvas, viewId, cameras, exposure: scene.exposure, isos: ISOS, tStops: T_STOPS }
   }
 })
 </script>
@@ -66,7 +75,8 @@ canvas {
   left: 12px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
   font-size: 13px;
 }
 .overlay label {
