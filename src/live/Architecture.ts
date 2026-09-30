@@ -1,4 +1,11 @@
-import { AbstractMesh, Color3, Mesh, MeshBuilder, PBRMaterial, Scene, TransformNode, VertexData } from '@babylonjs/core'
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial'
+import { Color3 } from '@babylonjs/core/Maths/math.color'
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
+import { Scene } from '@babylonjs/core/scene'
 import { same, triangulate, wallLength } from '../plan/geometry'
 import { FloorFinish, Opening, SceneDoc, Wall } from '../scene/types'
 
@@ -77,12 +84,38 @@ export class Architecture {
     this.casters = []
     this.root = new TransformNode('architecture', this.scene)
     doc.walls.forEach(w => this.buildWall(w, doc))
+    this.mergeBoxes()
     doc.rooms.forEach(r => {
       if (r.points.length < 3) return
       this.buildPolygon(`floor-${r.id}`, r.points, 0.002, true, this.floorMaterials[r.floor], LAYER.COMMON)
       if (r.ceiling) this.buildPolygon(`ceiling-${r.id}`, r.points, r.ceilingHeight, false, this.ceilingMaterial, LAYER.CEILING)
     })
     return true
+  }
+
+  // Merge the many wall/frame/door boxes into one mesh per material + view layer + caster role:
+  // far fewer draw calls once whole houses are built. Transforms are baked in.
+  private mergeBoxes(): void {
+    const root = this.root as TransformNode
+    const groups = new Map<string, Mesh[]>()
+    const casterSet = new Set(this.casters)
+    root.getChildMeshes(false).forEach(m => {
+      if (!(m instanceof Mesh) || !m.material) return
+      const key = `${m.material.uniqueId}|${m.layerMask}|${casterSet.has(m) ? 1 : 0}`
+      const list = groups.get(key) ?? []
+      list.push(m)
+      groups.set(key, list)
+    })
+    groups.forEach((meshes, key) => {
+      if (meshes.length < 2) return
+      const merged = Mesh.MergeMeshes(meshes, true, true, undefined, false, false)
+      if (!merged) return
+      const caster = key.endsWith('|1')
+      merged.name = `arch-merged-${key}`
+      merged.layerMask = Number(key.split('|')[1])
+      this.casters = this.casters.filter(c => !meshes.includes(c as Mesh))
+      this.mesh(merged, root, merged.layerMask, caster)
+    })
   }
 
   private mesh<T extends AbstractMesh>(mesh: T, parent: TransformNode, mask: number, caster: boolean): T {

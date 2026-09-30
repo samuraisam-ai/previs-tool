@@ -1,13 +1,13 @@
-import {
-  Camera,
-  Constants,
-  DepthRenderer,
-  Effect,
-  PostProcess,
-  RenderTargetTexture,
-  Scene,
-  Texture
-} from '@babylonjs/core'
+import { Camera } from '@babylonjs/core/Cameras/camera'
+import { Constants } from '@babylonjs/core/Engines/constants'
+import { RenderTargetWrapper } from '@babylonjs/core/Engines/renderTargetWrapper'
+import { RenderTargetTexture } from '@babylonjs/core/Materials/Textures/renderTargetTexture'
+import { Texture } from '@babylonjs/core/Materials/Textures/texture'
+import { Effect } from '@babylonjs/core/Materials/effect'
+import { EffectRenderer, EffectWrapper } from '@babylonjs/core/Materials/effectRenderer'
+import { PostProcess } from '@babylonjs/core/PostProcesses/postProcess'
+import { DepthRenderer } from '@babylonjs/core/Rendering/depthRenderer'
+import { Scene } from '@babylonjs/core/scene'
 
 // Per-camera post-processing that mimics the camera: physical depth of field (bokeh) on the HDR
 // scene, then the camera's display transform (exposure, white balance, tone curve), then the
@@ -77,7 +77,7 @@ void main(void) {
 Effect.ShadersStore.previsBokehFragmentShader = COC_COMMON + `
 uniform sampler2D textureSampler;
 const float GOLDEN = 2.39996323;
-const int MAX_TAPS = 48;
+const int MAX_TAPS = BOKEH_TAPS;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
 void main(void) {
@@ -250,8 +250,15 @@ export class CameraPipeline {
     zebras: false, zebraLevel: 95, falseColour: false, noiseAmp: 0
   }
 
-  constructor(scene: Scene, camera: Camera, display: DisplaySettings) {
+  private scene: Scene
+  private scopeTarget: RenderTargetWrapper | null = null
+  private scopeRenderer: EffectRenderer | null = null
+  private scopeWrapper: EffectWrapper | null = null
+  private scopeBuffer: WebGLBuffer | null = null
+
+  constructor(scene: Scene, camera: Camera, display: DisplaySettings, tier: { msaa: number; bokehTaps: number }) {
     const engine = scene.getEngine()
+    this.scene = scene
     const HALF = Constants.TEXTURETYPE_HALF_FLOAT
     const LINEAR = Texture.BILINEAR_SAMPLINGMODE
     this.depth = scene.enableDepthRenderer(camera, false, true, Texture.NEAREST_SAMPLINGMODE, true)
@@ -260,9 +267,9 @@ export class CameraPipeline {
 
     const capture = new PostProcess('capture', 'previsCapture', null, null, 1, camera, LINEAR, engine, false, null, HALF)
     // The scene renders into this target, so it carries the anti-aliasing (MSAA) for the image.
-    capture.samples = 4
+    capture.samples = tier.msaa
     const cocDown = new PostProcess('cocDown', 'previsCocDown', LENS_UNIFORMS, ['depthSampler'], 0.5, camera, LINEAR, engine, false, null, HALF)
-    const bokeh = new PostProcess('bokeh', 'previsBokeh', LENS_UNIFORMS, null, 0.5, camera, LINEAR, engine, false, null, HALF)
+    const bokeh = new PostProcess('bokeh', 'previsBokeh', LENS_UNIFORMS, null, 0.5, camera, LINEAR, engine, false, `#define BOKEH_TAPS ${tier.bokehTaps}`, HALF)
     const composite = new PostProcess('dofComposite', 'previsDofComposite', LENS_UNIFORMS, ['depthSampler', 'sharpSampler'], 1, camera, LINEAR, engine, false, null, HALF)
 
     // All lens passes work in full-resolution pixel units, whatever resolution they run at.
@@ -312,21 +319,66 @@ export class CameraPipeline {
     this.depth.getDepthMap().resetRefreshCounter()
   }
 
-  // The graded image before the monitor's assist overlays (false colour, zebras) — what scopes measure.
+  // The graded image before the monitor's assist overlays (false colour, zebras) — what scopes
+  // measure. It's shrunk to 256×144 on the GPU and read back asynchronously (WebGL2 pixel buffer +
+  // fence), so rendering never waits: ~150 KB instead of a full-frame stall.
   readGraded(): Promise<{ data: Uint8Array; width: number; height: number }> | null {
-    const texture = this.monitor.inputTexture?.texture
-    const engine = this.monitor.getEngine() as unknown as {
-      _readTexturePixels?: (t: unknown, w: number, h: number, face?: number, level?: number, buffer?: null, flush?: boolean) => Promise<ArrayBufferView>
+    const source = this.monitor.inputTexture?.texture
+    const engine = this.scene.getEngine()
+    const gl = (engine as unknown as { _gl: WebGL2RenderingContext })._gl
+    if (!source || !gl || typeof gl.fenceSync !== 'function') return null
+    const W = 256
+    const H = 144
+    if (!this.scopeTarget) {
+      this.scopeTarget = engine.createRenderTargetTexture({ width: W, height: H }, {
+        generateMipMaps: false, type: Constants.TEXTURETYPE_UNSIGNED_BYTE, samplingMode: Texture.BILINEAR_SAMPLINGMODE, generateDepthBuffer: false
+      })
+      this.scopeRenderer = new EffectRenderer(engine)
+      this.scopeWrapper = new EffectWrapper({
+        engine, name: 'scopeDown', samplerNames: ['source'],
+        fragmentShader: 'precision highp float; varying vec2 vUV; uniform sampler2D source; void main(void) { gl_FragColor = vec4(texture2D(source, vUV).rgb, 1.0); }'
+      })
+      this.scopeBuffer = gl.createBuffer()
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.scopeBuffer)
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, W * H * 4, gl.STREAM_READ)
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
     }
-    if (!texture || !engine._readTexturePixels) return null
-    const { width, height } = texture
-    return engine._readTexturePixels(texture, width, height, -1, 0, null, true)
-      .then(data => ({ data: data as Uint8Array, width, height }))
+    const wrapper = this.scopeWrapper as EffectWrapper
+    if (!wrapper.effect.isReady()) return null
+    wrapper.onApplyObservable.addOnce(() => { wrapper.effect._bindTexture('source', source) })
+    const renderer = this.scopeRenderer as EffectRenderer
+    renderer.render(wrapper, this.scopeTarget)
+    engine.bindFramebuffer(this.scopeTarget)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.scopeBuffer)
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, 0)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
+    engine.unBindFramebuffer(this.scopeTarget)
+    engine.restoreDefaultFramebuffer()
+    const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+    gl.flush()
+    const buffer = this.scopeBuffer
+    return new Promise((resolve, reject) => {
+      const poll = () => {
+        if (!fence) { reject(new Error('no fence')); return }
+        if (gl.clientWaitSync(fence, 0, 0) === gl.TIMEOUT_EXPIRED) { setTimeout(poll, 4); return }
+        gl.deleteSync(fence)
+        const data = new Uint8Array(W * H * 4)
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, buffer)
+        gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, data)
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
+        resolve({ data, width: W, height: H })
+      }
+      poll()
+    })
   }
 
   dispose(camera: Camera): void {
     this.passes.forEach(pass => pass.dispose(camera))
-    this.depth.dispose()
+    this.scene.disableDepthRenderer(camera)
+    this.scopeTarget?.dispose()
+    this.scopeWrapper?.dispose()
+    this.scopeRenderer?.dispose()
+    if (this.scopeBuffer) (this.scene.getEngine() as unknown as { _gl: WebGL2RenderingContext })._gl.deleteBuffer(this.scopeBuffer)
   }
 }
 

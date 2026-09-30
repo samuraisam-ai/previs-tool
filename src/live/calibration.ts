@@ -1,4 +1,10 @@
-import { Color3, DirectionalLight, MeshBuilder, PBRMaterial, Scene, TransformNode, Vector3 } from '@babylonjs/core'
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight'
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial'
+import { Color3 } from '@babylonjs/core/Maths/math.color'
+import { Vector3 } from '@babylonjs/core/Maths/math.vector'
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
+import { Scene } from '@babylonjs/core/scene'
 import { srgbToLinear } from '../library/colour'
 
 // Dev-only colour-pipeline test: a 24-patch chart (ColorChecker-style sRGB values) lit by a

@@ -64,6 +64,9 @@
       <TiltWheel v-model="light.props.tilt" icon="light" label="Light tilt" />
     </div>
 
+    <div class="readout shadow-status" :class="{ off: !castsShadow }">
+      {{ castsShadow ? '● Casting shadows' : `○ No shadows — the ${shadowBudget} shadow slot${shadowBudget === 1 ? '' : 's'} at this performance level go to the lights that matter most on the subject` }}
+    </div>
     <div class="readout">
       {{ resolved.omni ? 'Omni' : `Beam ${Math.round(resolved.beam)}°` }} · {{ Math.round(resolved.candela).toLocaleString() }} cd on-axis
       <div v-for="reading in readings" :key="reading.name">→ {{ reading.name }}: {{ reading.lux }} lux</div>
@@ -78,6 +81,7 @@ import { FIXTURES } from '../library/fixtures'
 import { modifiersFor } from '../library/modifiers'
 import { illuminanceAt, isZoomable, resolveLight, subjectMeterPoint } from '../library/photometry'
 import { CATEGORY_LABELS, COLOUR_LABELS, FixtureCategory } from '../library/types'
+import { renderState } from '../live/renderState'
 import { getItem, scene, setFixture, setModifier } from '../scene/store'
 import { LightItem, SubjectItem } from '../scene/types'
 
@@ -117,7 +121,11 @@ export default defineComponent({
     const onFixture = (event: Event) => setFixture(light.value as LightItem, (event.target as HTMLSelectElement).value)
     const onModifier = (event: Event) => setModifier(light.value as LightItem, (event.target as HTMLSelectElement).value)
 
+    const castsShadow = computed(() => renderState.shadowed.includes(props.id))
+    const shadowBudget = computed(() => renderState.shadowBudget)
+
     return {
+      castsShadow, shadowBudget,
       light, resolved, modifiers, zoomRange, baseOutput, gmLabel, readings, fixturesIn, onFixture, onModifier,
       categories: CATEGORY_LABELS, colourLabels: COLOUR_LABELS
     }
@@ -134,6 +142,8 @@ label > span { color: var(--text); display: flex; align-items: center; gap: 6px;
 select { width: 100%; box-sizing: border-box; }
 .spec, .readout { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .note { font-style: italic; }
+.shadow-status { color: #8fdc8f; }
+.shadow-status.off { color: var(--muted); }
 .approx { color: #1a1a1a; background: var(--muted); border-radius: 3px; padding: 0 4px; font-size: 11px; }
 .modes { display: flex; gap: 4px; }
 .modes button { flex: 1; }

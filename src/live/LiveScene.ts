@@ -1,50 +1,45 @@
-import {
-  AbstractMesh,
-  ArcRotateCamera,
-  Camera,
-  Color3,
-  Color4,
-  Effect,
-  Engine,
-  HemisphericLight,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  PointLight,
-  RenderTargetTexture,
-  Scene,
-  ShadowGenerator,
-  ShaderMaterial,
-  ShadowLight,
-  SpotLight,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-  Viewport
-} from '@babylonjs/core'
+import './babylonSideEffects'
+import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera'
+import { Camera } from '@babylonjs/core/Cameras/camera'
+import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera'
+import { Engine } from '@babylonjs/core/Engines/engine'
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight'
+import { SpotLight } from '@babylonjs/core/Lights/spotLight'
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial'
+import { Effect } from '@babylonjs/core/Materials/effect'
+import { ShaderMaterial } from '@babylonjs/core/Materials/shaderMaterial'
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color'
+import { Vector3 } from '@babylonjs/core/Maths/math.vector'
+import { Viewport } from '@babylonjs/core/Maths/math.viewport'
+import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
+import { Scene } from '@babylonjs/core/scene'
 import { getBody } from '../library/cameras'
 import { kelvinToSrgb, luminance, RGB, srgbToLinear } from '../library/colour'
 import { getLens } from '../library/lenses'
 import { focusDistance, horizontalFov, imageWidthMm, keyLux } from '../library/optics'
-import { headingDirection, ResolvedLight, resolveLight } from '../library/photometry'
+import { headingDirection, illuminanceAt, ResolvedLight, resolveLight, subjectMeterPoint } from '../library/photometry'
 import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
 import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
+import { LightPool, LightRequest, Slot } from './LightPool'
+import { renderState, Tier, TIERS } from './renderState'
 
 const DEG = Math.PI / 180
 // Widest cone the shadow map covers; wider sources still light, but only shadow inside this.
 const MAX_SHADOW_CONE = 120
-// Scopes sample the graded frame this often.
-const SCOPE_INTERVAL_MS = 200
+// While the orbit camera moves, render at draft resolution; restore full quality after this long still.
+const MOTION_SETTLE_MS = 250
 
 interface Entry {
   kind: SceneItem['kind']
   key: string
   root: TransformNode
   head?: TransformNode
-  light?: ShadowLight
-  shadows?: ShadowGenerator
+  omni?: boolean
   emitterMaterial?: ShaderMaterial
   emitterArea?: number
   stand?: Mesh
@@ -104,6 +99,24 @@ export class LiveScene {
   private scopeCallback: ((frame: FrameCapture) => void) | null = null
   private lastScopeRead = 0
   private reading = false
+  private scopeFrameDirty = false
+  // Rendering on demand: nothing is drawn unless something changed or the camera is moving.
+  private active = true
+  private needsFrames = 2
+  // Only image-processing settings changed (exposure, WB, focus, T-stop, assists): re-run the
+  // post-process chain on the last rendered frame instead of redrawing the scene.
+  private needsReprocess = false
+  private hasFrame = false
+  private awaitingReady = true
+  private motionUntil = 0
+  private inMotion = false
+  private qualityScale = 1.5
+  private tier: Tier = TIERS.standard
+  private pool: LightPool
+  private snapshots = new Map<string, string>()
+  // Camera placement/lens only (not exposure settings): what the depth map depends on.
+  private cameraGeometry = new Map<string, string>()
+  private slots = new Map<string, Slot>()
 
   constructor(private canvas: HTMLCanvasElement) {
     // adaptToDeviceRatio: render at the display's pixel density; quality is then set by setQuality().
@@ -140,11 +153,20 @@ export class LiveScene {
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
     this.markerMaterial = this.createSurface('marker', new Color3(0.04, 0.04, 0.045), 0.6)
 
-    this.engine.runRenderLoop(() => this.scene.render())
-    this.engine.onEndFrameObservable.add(() => this.readScopes())
+    this.pool = new LightPool(this.scene)
+    this.applyTier()
+
+    this.engine.runRenderLoop(() => this.frame())
+    // Orbiting/zooming: pointer and wheel input start "motion" (draft resolution until still).
+    const wake = () => { if (this.scene.activeCamera === this.orbitCamera) this.startMotion() }
+    ;['pointerdown', 'pointermove', 'wheel'].forEach(type => this.canvas.addEventListener(type, event => {
+      if (type !== 'pointermove' || (event as PointerEvent).buttons) wake()
+    }, { passive: true }))
     this.resizeObserver = new ResizeObserver(() => {
       this.engine.resize()
       this.applyViewport()
+      this.hasFrame = false
+      this.requestRender()
     })
     this.resizeObserver.observe(this.canvas)
   }
@@ -157,26 +179,146 @@ export class LiveScene {
   // Switch the active view: null = free orbit camera, otherwise look through a placed camera item.
   viewThrough(cameraId: string | null): void {
     const entry = cameraId ? this.entries.get(cameraId) : undefined
+    // Free the depth-of-field pipeline of the camera we're leaving (GPU memory matters on small machines).
+    const previous = this.viewingId ? this.entries.get(this.viewingId) : undefined
+    if (previous?.pipeline && previous.viewCamera && previous !== entry) {
+      previous.pipeline.dispose(previous.viewCamera)
+      previous.pipeline = undefined
+    }
     this.viewingId = entry?.viewCamera ? cameraId : null
-    if (entry?.viewCamera && !entry.pipeline) entry.pipeline = new CameraPipeline(this.scene, entry.viewCamera, this.display)
+    if (entry?.viewCamera && !entry.pipeline) entry.pipeline = new CameraPipeline(this.scene, entry.viewCamera, this.display, this.tier)
     this.scene.activeCamera = entry?.viewCamera ?? this.orbitCamera
     // Hide the camera body we're looking through so it doesn't block its own view.
     this.entries.forEach((e, id) => {
       if (e.kind === 'camera') e.root.setEnabled(id !== this.viewingId)
     })
     this.applyViewport()
+    this.snapshots.clear()
+    this.hasFrame = false
+    this.awaitingReady = true
+    this.requestRender()
+  }
+
+  // Re-run only the active camera's post-processes (depth of field, exposure, tone curve, assists)
+  // on the scene image already in the first pass's input — about 12 ms instead of a full redraw.
+  private reprocess(): void {
+    const cam = this.scene.activeCamera
+    const passes = cam?._postProcesses?.filter(p => p) ?? []
+    if (!cam || !passes.length || !this.hasFrame) {
+      this.scene.render()
+      return
+    }
+    this.engine.beginFrame()
+    this.scene.postProcessManager._finalizeFrame(false, undefined, undefined, cam._postProcesses as never)
+    this.engine.endFrame()
+  }
+
+  // ── Rendering on demand ─────────────────────────────────────────────────
+  requestRender(frames = 2): void {
+    this.needsFrames = Math.max(this.needsFrames, frames)
+  }
+
+  // Stop drawing entirely while the Live View isn't on screen.
+  setActive(on: boolean): void {
+    this.active = on
+    if (on) this.requestRender()
+  }
+
+  private startMotion(): void {
+    this.motionUntil = performance.now() + MOTION_SETTLE_MS
+    this.requestRender(1)
+    if (!this.inMotion) {
+      this.inMotion = true
+      this.applyScale()
+    }
+  }
+
+  private frame(): void {
+    if (!this.active) return
+    this.drawPending()
+  }
+
+  // Draw whatever is pending (full render, reprocess, or nothing). Public for the benchmark.
+  drawPending(): void {
+    const cam = this.orbitCamera
+    if (this.scene.activeCamera === cam && (cam.inertialAlphaOffset || cam.inertialBetaOffset || cam.inertialRadiusOffset || cam.inertialPanningX || cam.inertialPanningY)) {
+      this.startMotion()
+    }
+    if (this.inMotion && performance.now() > this.motionUntil) {
+      this.inMotion = false
+      this.applyScale()
+      this.requestRender()
+    }
+    if (this.awaitingReady) {
+      // Keep showing the last good frame while new shaders compile (isReady() drives compilation).
+      if (!this.scene.isReady()) {
+        if (!renderState.preparing) renderState.preparing = true
+        return
+      }
+      this.awaitingReady = false
+      renderState.preparing = false
+      this.requestRender()
+    }
+    if (this.needsFrames > 0) {
+      this.needsFrames--
+      this.needsReprocess = false
+      this.scene.render()
+      this.hasFrame = true
+      this.scopeFrameDirty = true
+    } else if (this.needsReprocess) {
+      this.needsReprocess = false
+      this.reprocess()
+      this.scopeFrameDirty = true
+    }
+    this.readScopes()
   }
 
   // Render resolution relative to CSS pixels (1 = draft, 2 = full retina), capped at the display's DPR.
   setQuality(scale: number): void {
-    const ratio = Math.min(scale, window.devicePixelRatio || 1)
+    this.qualityScale = scale
+    this.applyScale()
+  }
+
+  // Quality tier: shadow budget, soft shadows, MSAA, bokeh samples (render scale is set separately).
+  setTier(tier: Tier): void {
+    if (tier.id === this.tier.id) return
+    this.tier = tier
+    this.applyTier()
+    // Rebuild the viewed camera's pipeline with the tier's MSAA and bokeh settings.
+    const viewing = this.viewingId
+    this.viewThrough(null)
+    this.viewThrough(viewing)
+  }
+
+  private applyTier(): void {
+    const t = this.tier
+    this.pool.configure({ spots: 6, points: 2, shadowSpots: t.shadowSpots, shadowPoints: t.shadowPoints, shadowMapSize: t.shadowMapSize, softShadows: t.softShadows })
+    renderState.tier = t.id
+    renderState.shadowBudget = t.shadowSpots + t.shadowPoints
+    this.slots.clear()
+    this.snapshots.clear()
+    this.awaitingReady = true
+    this.requestRender()
+  }
+
+  private applyScale(): void {
+    const target = this.inMotion ? Math.min(1, this.qualityScale) : this.qualityScale
+    const ratio = Math.min(target, window.devicePixelRatio || 1)
+    if (Math.abs(this.engine.getHardwareScalingLevel() - 1 / ratio) < 1e-6) return
     this.engine.setHardwareScalingLevel(1 / ratio)
     this.engine.resize()
+    this.hasFrame = false
     this.entries.forEach(entry => entry.pipeline?.invalidate())
+    this.requestRender()
   }
 
   getFps(): number {
     return this.engine.getFps()
+  }
+
+  // True while frames are being drawn continuously (the camera is moving).
+  isAnimating(): boolean {
+    return this.inMotion
   }
 
   // The recorded image area within the canvas (CSS pixels, top-left origin), e.g. a 16:9 letterbox.
@@ -188,12 +330,15 @@ export class LiveScene {
   // Receive the graded frame a few times a second (for scopes). null stops it.
   onFrame(callback: ((frame: FrameCapture) => void) | null): void {
     this.scopeCallback = callback
+    this.scopeFrameDirty = true
+    this.requestRender(1)
   }
 
   // Orbit view: walls cut at hip height (dollhouse) or full height.
   setCutaway(on: boolean): void {
     this.cutaway = on
     this.applyLayers()
+    this.requestRender()
   }
 
   private applyLayers(): void {
@@ -203,8 +348,11 @@ export class LiveScene {
     })
   }
 
-  sync(doc: SceneDoc): void {
-    const rebuilt = this.architecture.sync(doc)
+  // Bring the 3D scene in line with the document. Only what changed is touched: unchanged items are
+  // skipped, the architecture rebuilds only when it changed, and shadow/depth maps re-render only
+  // when geometry or lights moved. `archChanged` = walls/openings/rooms may have changed.
+  sync(doc: SceneDoc, archChanged = true): void {
+    const rebuilt = archChanged && this.architecture.sync(doc)
 
     // Exposure, WB and polarizer come from the camera being looked through, or the active camera.
     const exposingId = this.viewingId ?? doc.activeCameraId
@@ -221,17 +369,20 @@ export class LiveScene {
     // Polarizer: cuts specular reflections as the ring turns (0° = none cut, 90° = most cut).
     const pol = settings?.polarizer.fitted ? Math.cos(settings.polarizer.angle * DEG) ** 2 : 1
     const specular = settings?.polarizer.fitted ? 0.15 + 0.85 * pol : 1
-    ;[this.subjectMaterial, ...this.architecture.polarizable].forEach(m => { m.specularIntensity = specular })
+    let specularChanged = false
+    ;[this.subjectMaterial, ...this.architecture.polarizable].forEach(m => {
+      if (m.specularIntensity !== specular) { m.specularIntensity = specular; specularChanged = true }
+    })
 
     // Equipment stays readable at any exposure.
     this.markerMaterial.emissiveColor = new Color3(0.035, 0.035, 0.04).scale(key / Math.PI)
-    // Ambient = estimated room bounce (tinted by the lights) + a little base fill.
-    const bounce = sceneBounce(doc)
-    this.ambient.intensity = bounce.lux + doc.ambientLux
-    this.ambient.diffuse = new Color3(bounce.colour[0], bounce.colour[1], bounce.colour[2])
-    this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
 
+    let lightsChanged = false
+    let subjectsChanged = false
+    let camerasChanged = false
+    let cameraMoved = false
     const seen = new Set<string>()
+    const cameras: CameraItem[] = []
     doc.items.forEach(item => {
       seen.add(item.id)
       let entry = this.entries.get(item.id)
@@ -240,21 +391,110 @@ export class LiveScene {
         this.removeEntry(item.id)
         entry = undefined
       }
+      const snapshot = JSON.stringify(item)
       if (!entry) {
         entry = this.createEntry(item, entryKey)
         this.entries.set(item.id, entry)
+      } else if (this.snapshots.get(item.id) === snapshot) {
+        if (item.kind === 'camera') cameras.push(item)
+        return
       }
+      this.snapshots.set(item.id, snapshot)
+      if (item.kind === 'camera') {
+        cameras.push(item)
+        camerasChanged = true
+        const geometry = JSON.stringify([item.x, item.z, item.height, item.rotationY, item.props.tilt, item.props.lensId, item.props.fps])
+        if (this.cameraGeometry.get(item.id) !== geometry) { this.cameraGeometry.set(item.id, geometry); cameraMoved = true }
+        return
+      }
+      if (item.kind === 'light') lightsChanged = true
+      if (item.kind === 'subject') subjectsChanged = true
       this.updateEntry(entry, item, doc)
     })
-
-    this.entries.forEach((_entry, id) => {
-      if (!seen.has(id)) this.removeEntry(id)
+    this.entries.forEach((entry, id) => {
+      if (seen.has(id)) return
+      if (entry.kind === 'light') lightsChanged = true
+      if (entry.kind === 'subject') subjectsChanged = true
+      this.removeEntry(id)
+      this.snapshots.delete(id)
     })
-
+    // Cameras depend on subjects (autofocus distance), so refresh them when either changed.
+    cameras.forEach(cam => {
+      const entry = this.entries.get(cam.id)
+      if (entry && (camerasChanged || subjectsChanged || !entry.viewCamera?.fov)) this.updateEntry(entry, cam, doc)
+    })
     if (this.viewingId && !this.entries.has(this.viewingId)) this.viewThrough(null)
-    this.refreshShadowCasters()
-    this.entries.forEach(entry => entry.pipeline?.invalidate())
+
+    if (lightsChanged || subjectsChanged || this.slots.size === 0) this.assignLights(doc)
+    // Ambient = estimated room bounce (tinted by the lights) + a little base fill.
+    if (lightsChanged || rebuilt) {
+      const bounce = sceneBounce(doc)
+      this.ambient.intensity = bounce.lux + doc.ambientLux
+      this.ambient.diffuse = new Color3(bounce.colour[0], bounce.colour[1], bounce.colour[2])
+      this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
+    }
+    if (rebuilt || subjectsChanged) this.pool.refreshShadows(this.shadowCasters())
+    else if (lightsChanged) this.pool.refreshShadows(null)
+    // Depth (for depth of field) only changes when something moved, not when exposure/WB/ISO change.
+    if (rebuilt || subjectsChanged || lightsChanged || cameraMoved) this.entries.forEach(entry => entry.pipeline?.invalidate())
     if (rebuilt) this.applyLayers()
+    const sceneChanged = rebuilt || lightsChanged || subjectsChanged || cameraMoved || specularChanged || !this.hasFrame
+    if (sceneChanged) {
+      this.awaitingReady = true
+      this.requestRender()
+    } else {
+      this.needsReprocess = true
+    }
+  }
+
+  // Hand pool lights to fixtures. The fixtures that matter most to the shot (brightest on the
+  // subjects) get the shadowed slots; the rest still light the scene without shadows.
+  private assignLights(doc: SceneDoc): void {
+    const lights = doc.items.filter((i): i is LightItem => i.kind === 'light')
+    const subjects = doc.items.filter((i): i is SubjectItem => i.kind === 'subject')
+    const scored = lights.map(item => {
+      const resolved = resolveLight(item)
+      const onSubjects = subjects.reduce((m, s) => Math.max(m, illuminanceAt(item, subjectMeterPoint(s))), 0)
+      return { item, resolved, score: subjects.length ? onSubjects : resolved.candela }
+    }).sort((a, b) => b.score - a.score)
+    const budget = this.pool.budget
+    let spots = budget.spots
+    let points = budget.points
+    const requests: LightRequest[] = scored.map(({ item, resolved }) => {
+      const type = resolved.omni ? 'point' : 'spot'
+      const shadow = type === 'spot' ? spots-- > 0 : points-- > 0
+      return { id: item.id, type, shadow }
+    })
+    this.slots = this.pool.assign(requests)
+    scored.forEach(({ item, resolved }) => {
+      const slot = this.slots.get(item.id)
+      if (slot) this.applyLight(slot, item, resolved)
+    })
+    const shadowed = scored.filter(({ item }) => this.slots.get(item.id)?.shadows).map(({ item }) => item.id)
+    if (JSON.stringify(shadowed) !== JSON.stringify(renderState.shadowed)) renderState.shadowed = shadowed
+  }
+
+  private applyLight(slot: Slot, item: LightItem, resolved: ResolvedLight): void {
+    const verticalTube = resolved.emitter.shape === 'tube' && item.props.orientation === 'vertical'
+    const tilt = verticalTube ? 0 : item.props.tilt
+    const [r, g, b] = resolved.colour
+    const colour = new Color3(r, g, b)
+    const light = slot.light
+    light.position.set(item.x, item.height, item.z)
+    light.intensity = resolved.candela
+    light.diffuse = colour
+    light.specular = colour
+    if (light instanceof SpotLight) {
+      const [dx, dy, dz] = headingDirection(item.rotationY, tilt)
+      light.direction = new Vector3(dx, dy, dz)
+      light.angle = resolved.coneAngle * DEG
+      light.innerAngle = resolved.innerAngle * DEG
+      light.shadowAngleScale = Math.min(1, MAX_SHADOW_CONE / resolved.coneAngle)
+    }
+    // Contact-hardening shadows: penumbra grows with the source size (softbox vs bare COB).
+    if (slot.shadows?.useContactHardeningShadow) {
+      slot.shadows.contactHardeningLightSizeUVRatio = Math.min(Math.max(resolved.sourceSize * 0.12, 0.01), 0.3)
+    }
   }
 
   private applyViewport(): void {
@@ -269,34 +509,30 @@ export class LiveScene {
     })
   }
 
+  // Scopes read the latest rendered frame (only after a new frame, at the tier's rate).
   private readScopes(): void {
-    if (!this.scopeCallback || !this.viewingId || this.reading) return
+    if (!this.scopeCallback || !this.viewingId || this.reading || !this.scopeFrameDirty) return
     const now = performance.now()
-    if (now - this.lastScopeRead < SCOPE_INTERVAL_MS) return
+    if (now - this.lastScopeRead < this.tier.scopeIntervalMs) return
+    this.scopeFrameDirty = false
     this.lastScopeRead = now
     const pipeline = this.entries.get(this.viewingId)?.pipeline
     const graded = pipeline?.readGraded()
-    if (graded) {
-      this.reading = true
-      graded.then(frame => {
-        this.reading = false
-        this.scopeCallback?.(frame)
-      }).catch(() => { this.reading = false })
+    // Not ready yet (e.g. the downsample shader is compiling): try again after the next frame.
+    if (!graded) {
+      this.scopeFrameDirty = true
+      this.requestReprocessSoon()
       return
     }
-    const viewport = this.scene.activeCamera?.viewport
-    if (!viewport) return
-    const w = this.engine.getRenderWidth()
-    const h = this.engine.getRenderHeight()
-    const x = Math.round(viewport.x * w)
-    const y = Math.round(viewport.y * h)
-    const width = Math.max(1, Math.round(viewport.width * w))
-    const height = Math.max(1, Math.round(viewport.height * h))
     this.reading = true
-    this.engine.readPixels(x, y, width, height, true, false).then(pixels => {
+    graded.then(frame => {
       this.reading = false
-      this.scopeCallback?.({ data: pixels as Uint8Array, width, height })
+      this.scopeCallback?.(frame)
     }).catch(() => { this.reading = false })
+  }
+
+  private requestReprocessSoon(): void {
+    setTimeout(() => { this.needsReprocess = true }, 50)
   }
 
   private createSurface(name: string, color: Color3, roughness: number): PBRMaterial {
@@ -331,8 +567,6 @@ export class LiveScene {
     if (!entry) return
     if (this.viewingId === id) this.viewThrough(null)
     if (entry.pipeline && entry.viewCamera) entry.pipeline.dispose(entry.viewCamera)
-    entry.shadows?.dispose()
-    entry.light?.dispose()
     entry.viewCamera?.dispose()
     entry.emitterMaterial?.dispose()
     entry.root.dispose(false, false)
@@ -359,25 +593,8 @@ export class LiveScene {
     head.parent = entry.root
     entry.head = head
 
-    let light: ShadowLight
-    let shadows: ShadowGenerator
-    if (resolved.omni) {
-      light = new PointLight(item.id, Vector3.Zero(), this.scene)
-      shadows = new ShadowGenerator(1024, light)
-      shadows.usePoissonSampling = true
-    } else {
-      light = new SpotLight(item.id, Vector3.Zero(), new Vector3(0, -1, 0), Math.PI / 3, 1, this.scene)
-      shadows = new ShadowGenerator(2048, light)
-      // Contact-hardening shadows: penumbra grows with the source size (softbox vs bare COB).
-      shadows.useContactHardeningShadow = true
-      shadows.filteringQuality = ShadowGenerator.QUALITY_MEDIUM
-      shadows.contactHardeningLightSizeUVRatio = Math.min(Math.max(resolved.sourceSize * 0.12, 0.01), 0.3)
-    }
-    light.shadowMinZ = 0.05
-    light.shadowMaxZ = 25
-    shadows.bias = 0.0008
-    entry.light = light
-    entry.shadows = shadows
+    // The actual light comes from the pool (see assignLights); this is the fixture's body.
+    entry.omni = resolved.omni
 
     // Emitting surfaces are HDR: they glow at their real luminance, so they clip in frame like real
     // sources and turn into bokeh when out of focus.
@@ -543,18 +760,6 @@ export class LiveScene {
 
     const [r, g, b] = resolved.colour
     const colour = new Color3(r, g, b)
-    const light = entry.light as ShadowLight
-    light.position.set(item.x, item.height, item.z)
-    light.intensity = resolved.candela
-    light.diffuse = colour
-    light.specular = colour
-    if (light instanceof SpotLight) {
-      const [dx, dy, dz] = headingDirection(item.rotationY, tilt)
-      light.direction = new Vector3(dx, dy, dz)
-      light.angle = resolved.coneAngle * DEG
-      light.innerAngle = resolved.innerAngle * DEG
-      light.shadowAngleScale = Math.min(1, MAX_SHADOW_CONE / resolved.coneAngle)
-    }
 
     // Emitting face luminance (cd/m²) = intensity / area — the same units the lit surfaces render in.
     const emitter = entry.emitterMaterial as ShaderMaterial
@@ -607,21 +812,13 @@ export class LiveScene {
     }
   }
 
-  private refreshShadowCasters(): void {
-    // Subjects and the architecture (walls, doors) cast shadows, so light falls through doorways
-    // and windows the way it would on location.
+  // Subjects and the architecture (walls, doors) cast shadows, so light falls through doorways and
+  // windows the way it would on location.
+  private shadowCasters(): AbstractMesh[] {
     const casters: AbstractMesh[] = [...this.architecture.casters]
     this.entries.forEach(entry => {
       if (entry.kind === 'subject' && entry.casters) casters.push(...entry.casters)
     })
-    this.entries.forEach(entry => {
-      const shadowMap = entry.shadows?.getShadowMap()
-      if (!shadowMap) return
-      shadowMap.renderList = casters.slice()
-      // The scene only changes when the plan does, so shadow maps render once per change rather
-      // than every frame (a big saving on integrated GPUs).
-      shadowMap.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE
-      shadowMap.resetRefreshCounter()
-    })
+    return casters
   }
 }
