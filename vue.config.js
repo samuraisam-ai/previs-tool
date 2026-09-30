@@ -2,5 +2,6 @@
 // from any static host or subfolder.
 module.exports = {
   productionSourceMap: false,
-  publicPath: './'
+  publicPath: './',
+  pages: { index: { entry: 'src/main.ts', title: 'Previs Tool by Leverage AI' } }
 }

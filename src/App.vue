@@ -1,7 +1,7 @@
 <template>
   <div class="shell">
     <header>
-      <strong>Previs</strong>
+      <strong class="brand">Previs Tool <span>by Leverage AI</span></strong>
       <nav>
         <button :class="{ on: nav.view === 'plan' }" @click="nav.view = 'plan'">Floor Plan</button>
         <button :class="{ on: nav.view === 'live' }" @click="nav.view = 'live'">Live View</button>
@@ -93,6 +93,9 @@ header {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
+header .brand { white-space: nowrap; }
+header .brand span { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
+@media (max-width: 640px) { header .brand span { display: none; } }
 nav {
   display: flex;
   gap: 4px;
