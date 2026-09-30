@@ -1,8 +1,10 @@
-import { Engine, Scene, FreeCamera, HemisphericLight, Vector3, MeshBuilder, CubeTexture, PBRMaterial, Texture, Color3, GlowLayer } from '@babylonjs/core'
+import { Engine, Scene, FreeCamera, HemisphericLight, Vector3, MeshBuilder, CubeTexture, PBRMaterial, Texture, Color3, GlowLayer, Mesh } from '@babylonjs/core'
 
 export class PBR {
   private engine: Engine
   public scene: Scene
+  public models: Mesh[] = []
+  public ball: Mesh | null = null
 
   constructor(private canvas: HTMLCanvasElement) {
     this.engine = new Engine(this.canvas, true)
@@ -38,12 +40,21 @@ export class PBR {
   }
 
   createEnvironment(): void {
-    const ground = MeshBuilder.CreateGround('ground', { width: 10, height: 10 }, this.scene)
+    const ground = MeshBuilder.CreateGround('ground', { width: 40, height: 40 }, this.scene)
     ground.material = this.createAsphalt()
 
     const ball = MeshBuilder.CreateSphere('ball', { diameter: 1 }, this.scene)
     ball.position = new Vector3(0, 1, 0)
     ball.material = this.createMagic()
+
+    const boxLeft = MeshBuilder.CreateBox('boxLeft', { size: 1 }, this.scene)
+    boxLeft.position = new Vector3(-3, 0.5, 2)
+
+    const boxRight = MeshBuilder.CreateBox('boxRight', { size: 1.25 }, this.scene)
+    boxRight.position = new Vector3(3, 0.625, -2)
+
+    this.ball = ball
+    this.models = [ground, ball, boxLeft, boxRight]
   }
 
   createAsphalt(): PBRMaterial {

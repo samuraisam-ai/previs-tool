@@ -11,13 +11,13 @@
 
 <script lang="ts">
 import { defineComponent } from 'vue'
-import { PBR } from '../BabylonExamples/PBR'
+import { LightsShadows } from '../BabylonExamples/LightsShadows'
 
 export default defineComponent({
   name: 'BabylonExamples',
   mounted() {
     const canvas = document.querySelector('canvas') as HTMLCanvasElement
-    new PBR(canvas!)
+    new LightsShadows(canvas!)
   }
 })
 </script>
