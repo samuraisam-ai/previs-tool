@@ -107,9 +107,9 @@ export const scene = reactive<SceneDoc>({
   marks: []
 })
 
-const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1 }
+const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1, prop: 0 }
 
-export function addItem(kind: ItemKind, fixtureId = DEFAULT_FIXTURE): SceneItem {
+export function addItem(kind: Exclude<ItemKind, 'prop'>, fixtureId = DEFAULT_FIXTURE): SceneItem {
   counts[kind]++
   const base = { id: newId(kind), x: 0, z: 0, rotationY: 0 }
   let item: SceneItem

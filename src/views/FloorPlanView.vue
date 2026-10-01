@@ -3,6 +3,7 @@
     <div ref="area" class="canvas-area">
       <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" @line="lineToggle" />
       <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
+      <PropLibrary v-if="showProps" @pick="addPropPicked" @close="showProps = false" />
 
       <!-- SVG units are metres. svg y = -world z, so "up" on the plan is +z in 3D. -->
       <svg
@@ -22,6 +23,7 @@
         </g>
         <ArchLayer :px="px" />
         <LineLayer :px="px" part="under" />
+        <PropLayer :px="px" />
         <MarkLayer :px="px" />
         <ItemLayer :px="px" />
         <LineLayer :px="px" part="over" />
@@ -39,6 +41,7 @@
       <OpeningPanel v-else-if="panel === 'opening'" :id="editor.selection[0]" />
       <SelectionPanel v-else-if="panel === 'selection'" :ids="editor.selection" />
       <LineOfActionPanel v-else-if="panel === 'line'" />
+      <PropPanel v-else-if="panel === 'prop'" :key="editor.selection.join()" :ids="editor.selection" />
       <div v-else class="panel-body">
         <h4>Floor plan</h4>
         <p class="readout">
@@ -77,6 +80,10 @@ import LightLibrary from '../components/LightLibrary.vue'
 import PlanToolbar from '../plan/PlanToolbar.vue'
 import LineLayer from '../plan/LineLayer.vue'
 import MarkLayer from '../plan/MarkLayer.vue'
+import PropLayer from '../plan/PropLayer.vue'
+import PropLibrary from '../props/PropLibrary.vue'
+import PropPanel from '../plan/panels/PropPanel.vue'
+import { addProp } from '../props/add'
 import BlockingBar from '../plan/BlockingBar.vue'
 import { playback, stop as stopPlayback, togglePlay } from '../plan/blocking'
 import { addMark, canHaveMarks, deleteMark, headingTo, setMarkHeading, setMarkPosition } from '../plan/marks'
@@ -137,7 +144,7 @@ const SNAP_PX = 10
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar, LineLayer, LineOfActionPanel, WorldPanel, MarkLayer, BlockingBar },
+  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar, LineLayer, LineOfActionPanel, WorldPanel, MarkLayer, BlockingBar, PropLayer, PropLibrary, PropPanel },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -495,7 +502,7 @@ export default defineComponent({
           if (h.includes('e') || h.includes('w')) sx = size(Math.abs(p.x - g.anchor.x)) / Math.max(Math.abs(g.ref.x - g.anchor.x), 0.01)
           if (h.includes('n') || h.includes('s')) sz = size(Math.abs(p.z - g.anchor.z)) / Math.max(Math.abs(g.ref.z - g.anchor.z), 0.01)
           if (event.shiftKey && h.length === 2) { const u = Math.max(sx, sz); sx = u; sz = u }
-          applyTransform(g.session, scaleAbout(g.anchor, sx, sz))
+          applyTransform(g.session, scaleAbout(g.anchor, sx, sz), 0, { sx, sz })
           editor.hud = { at: p, text: `${(g.w * sx).toFixed(2)} × ${(g.d * sz).toFixed(2)} m` }
           break
         }
@@ -586,6 +593,9 @@ export default defineComponent({
     const panel = computed(() => {
       const sel = editor.selection
       if (!sel.length) return null
+      // Props (one, or several of the same kind) get the prop panel.
+      const first = getItem(sel[0])
+      if (first?.kind === 'prop' && sel.every(id => { const i = getItem(id); return i?.kind === 'prop' && i.props.catalogId === first.props.catalogId })) return 'prop'
       if (sel.length > 1) return 'selection'
       if (sel[0] === LINE_ID) return 'line'
       const e = getEntity(sel[0])
@@ -600,12 +610,20 @@ export default defineComponent({
       item.z = round3(editor.view.cz - 1)
       setSelection([item.id])
     }
-    const add = (kind: ItemKind) => placeInView(addItem(kind))
+    const add = (kind: Exclude<ItemKind, 'prop'>) => placeInView(addItem(kind))
     // From the Elements menu: subjects and cameras are added in view; Light opens the library.
-    const onAdd = (kind: 'subject' | 'camera' | 'light') => {
+    const onAdd = (kind: string) => {
       setTool('select')
-      if (kind === 'light') showLibrary.value = true
-      else add(kind)
+      if (kind === 'light') { showProps.value = false; showLibrary.value = true }
+      else if (kind === 'props') { showLibrary.value = false; showProps.value = true }
+      else if (kind.startsWith('prop:')) addPropPicked(kind.slice(5))
+      else if (kind === 'subject' || kind === 'camera') add(kind)
+    }
+    // Set dressing: the library stays open so several props can be added in a row.
+    const showProps = ref(false)
+    const addPropPicked = (defId: string) => {
+      const prop = addProp(defId)
+      if (prop) placeInView(prop)
     }
     const addLight = (fixtureId: string) => {
       placeInView(addItem('light', fixtureId))
@@ -630,6 +648,7 @@ export default defineComponent({
       if (mod && key === 'a') { setSelection([...scene.rooms, ...scene.walls, ...scene.openings, ...scene.items].map(e => e.id)); event.preventDefault(); return }
       if (mod) return
       if (key === 'escape') {
+        showProps.value = false
         editor.activeMark = null
         setTool('select')
         editor.measure = null
@@ -654,6 +673,7 @@ export default defineComponent({
       if (key === 'c') { capture(); return }
       if (key === 'l') { lineToggle(); return }
       if (key === 'k') { setTool('marks'); return }
+      if (key === 'j') { showLibrary.value = false; showProps.value = !showProps.value; return }
       if (key === 'p') { togglePlay(); return }
       const tool = KEY_TOOLS[key]
       if (tool) setTool(tool)
@@ -707,7 +727,7 @@ export default defineComponent({
 
     return {
       capture, lineToggle,
-      svg, area, editor, setTool, showLibrary, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
+      svg, area, editor, setTool, showLibrary, showProps, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
       onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
     }
   }

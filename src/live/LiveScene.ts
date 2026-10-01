@@ -21,12 +21,14 @@ import { kelvinToSrgb, lightColour, luminance, RGB, srgbToLinear } from '../libr
 import { getLens } from '../library/lenses'
 import { focusDistance, horizontalFov, imageWidthMm, keyLux } from '../library/optics'
 import { headingDirection, illuminanceAt, ResolvedLight, resolveLight, subjectMeterPoint } from '../library/photometry'
-import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
+import { CameraItem, CameraProps, LightItem, PropItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
 import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
 import { bounceLux, worldLux } from '../scene/world'
 import { ownerColour } from '../plan/marks'
 import { TapeMarks } from './TapeMarks'
+import { PropsLayer } from './PropsLayer'
+import { storage } from '../setups/storage'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 import { LightPool, LightRequest, Slot } from './LightPool'
 import { renderState, Tier, TIERS } from './renderState'
@@ -123,6 +125,7 @@ export class LiveScene {
   private slots = new Map<string, Slot>()
   private worldKey = ''
   private tapeMarks: TapeMarks
+  private propsLayer: PropsLayer
   private marksInCameras = false
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -156,6 +159,14 @@ export class LiveScene {
 
     this.architecture = new Architecture(this.scene, (name, color, roughness) => this.createSurface(name, color, roughness))
     this.tapeMarks = new TapeMarks(this.scene, LAYER.MARKS)
+    this.propsLayer = new PropsLayer(
+      this.scene,
+      name => this.createSurface(name, Color3.White(), 0.5),
+      () => (this.tier.id === 'lite' ? 256 : 512),
+      id => storage.getImageUrl(id),
+      () => this.requestRender(),
+      LAYER.COMMON
+    )
     this.applyLayers()
     // Slightly glossy skin gives the polarizer something to cut (floors have per-finish sheen).
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
@@ -438,6 +449,8 @@ export class LiveScene {
     const seen = new Set<string>()
     const cameras: CameraItem[] = []
     doc.items.forEach(item => {
+      // Set dressing is built by the props layer (merged meshes, shared materials).
+      if (item.kind === 'prop') return
       seen.add(item.id)
       let entry = this.entries.get(item.id)
       const entryKey = item.kind === 'light' ? lightKey(item) : item.kind
@@ -495,10 +508,13 @@ export class LiveScene {
       this.ambient.diffuse = new Color3(mix(0), mix(1), mix(2))
       this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
     }
-    if (rebuilt || subjectsChanged) this.pool.refreshShadows(this.shadowCasters())
+    const propsChanged = this.propsLayer.sync(doc.items.filter((i): i is PropItem => i.kind === 'prop'))
+    this.propsLayer.materials.setBrightness((0.8 * key) / Math.PI)
+    if (propsChanged) this.requestRender()
+    if (rebuilt || subjectsChanged || propsChanged) this.pool.refreshShadows(this.shadowCasters())
     else if (lightsChanged) this.pool.refreshShadows(null)
     // Depth (for depth of field) only changes when something moved, not when exposure/WB/ISO change.
-    if (rebuilt || subjectsChanged || lightsChanged || cameraMoved) this.entries.forEach(entry => entry.pipeline?.invalidate())
+    if (rebuilt || subjectsChanged || lightsChanged || cameraMoved || propsChanged) this.entries.forEach(entry => entry.pipeline?.invalidate())
     if (rebuilt) this.applyLayers()
     const sceneChanged = rebuilt || lightsChanged || subjectsChanged || cameraMoved || specularChanged || !this.hasFrame
     if (sceneChanged) {
@@ -877,7 +893,7 @@ export class LiveScene {
   // Subjects and the architecture (walls, doors) cast shadows, so light falls through doorways and
   // windows the way it would on location.
   private shadowCasters(): AbstractMesh[] {
-    const casters: AbstractMesh[] = [...this.architecture.casters]
+    const casters: AbstractMesh[] = [...this.architecture.casters, ...this.propsLayer.casters(this.tier.id !== 'lite')]
     this.entries.forEach(entry => {
       if (entry.kind === 'subject' && entry.casters) casters.push(...entry.casters)
     })

@@ -152,7 +152,8 @@ export default defineComponent({
   },
   setup() {
     // Drawn at their blocking pose while playback runs.
-    const items = computed(() => (playback.active ? scene.items.map(posed) : scene.items))
+    // Props are drawn by PropLayer, underneath.
+    const items = computed(() => scene.items.filter(i => i.kind !== 'prop').map(i => (playback.active ? posed(i) : i)))
     const single = computed(() => (editor.selection.length === 1 ? editor.selection[0] : null))
     const cameraList = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
     const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))

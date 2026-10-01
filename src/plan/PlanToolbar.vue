@@ -15,7 +15,7 @@
         <svg class="caret" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" /></svg>
       </button>
       <div v-if="open" ref="menu" class="menu" role="menu" @keydown="onMenuKey">
-        <section v-for="section in SECTIONS" :key="section.title">
+        <section v-for="section in sections" :key="section.title">
           <h6>{{ section.title }}</h6>
           <button
             v-for="item in section.items"
@@ -58,6 +58,8 @@
 <script lang="ts">
 import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { scene } from '../scene/store'
+import { library } from '../props/add'
+import { getDef } from '../props/catalog'
 
 // Line icons (24×24, stroked).
 const ICONS: Record<string, string> = {
@@ -77,6 +79,7 @@ const ICONS: Record<string, string> = {
   redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
   fit: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
   marks: 'M5 6h14M12 6v12M5 20l2-2M17 20l2-2',
+  sofa: 'M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3M3 11h18v6H3zM5 17v2M19 17v2M7 11v3h10v-3',
   line: 'M3 18L21 6M7 20a2 2 0 1 0 0-.01M17 6a2 2 0 1 0 0-.01',
   capture: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'
 }
@@ -88,7 +91,7 @@ interface MenuItem {
   icon: string
   key?: string
   tool?: string // a placing tool to switch to
-  add?: 'subject' | 'camera' | 'light' // or something to add straight away
+  add?: string // or something to add straight away ('subject', 'camera', 'light', 'props', 'prop:<id>')
 }
 
 // Data-driven so new sections (e.g. Furniture) slot in without layout changes.
@@ -111,6 +114,12 @@ const SECTIONS: Array<{ title: string; items: MenuItem[] }> = [
       { id: 'camera', label: 'Camera', hint: 'Sony FX3 with Aizu primes', icon: 'camera', add: 'camera' },
       { id: 'marks', label: 'Blocking marks', hint: 'T marks for a subject or camera', icon: 'marks', key: 'K', tool: 'marks' }
     ]
+  },
+  {
+    title: 'Set dressing',
+    items: [
+      { id: 'props', label: 'Props library…', hint: 'Furniture, decor, plants, practicals — by room', icon: 'sofa', key: 'J', add: 'props' }
+    ]
   }
 ]
 
@@ -131,6 +140,13 @@ export default defineComponent({
 
     const placing = computed(() => props.tool !== 'select' && props.tool !== 'pan')
     const lineOn = computed(() => !!scene.lineOfAction?.visible)
+    // Set dressing also lists the props used most recently, for one-click re-adding.
+    const sections = computed(() => SECTIONS.map(sec => (sec.title !== 'Set dressing' ? sec : {
+      ...sec,
+      items: [...sec.items, ...library.recent.slice(0, 5).map(id => getDef(id)).filter(d => !!d).map(d => ({
+        id: `prop:${d?.id}`, label: d?.name ?? '', hint: 'Recently used', icon: 'sofa', add: `prop:${d?.id}`
+      }))]
+    })))
     const placingLabel = computed(() => LABELS[props.tool] ?? '')
 
     const focusItem = (index: number) => {
@@ -176,7 +192,7 @@ export default defineComponent({
       observer?.disconnect()
     })
 
-    return { open, bar, menu, menuRoot, compact, placing, placingLabel, lineOn, toggle, choose, onMenuKey, SECTIONS, ICONS }
+    return { open, bar, menu, menuRoot, compact, placing, placingLabel, lineOn, sections, toggle, choose, onMenuKey, ICONS }
   }
 })
 </script>

@@ -95,7 +95,7 @@ export default defineComponent({
 
     return { crossesLine,
       item, meter, cameraList, scene, remove, duplicate,
-      kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera' },
+      kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera', prop: 'Prop' },
       isos: getBody('fx3').isos,
       tStops: T_STOPS
     }

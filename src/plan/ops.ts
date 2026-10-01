@@ -1,5 +1,5 @@
 import { makeRoom, makeWall, newId, removeItem, scene } from '../scene/store'
-import { Opening, OpeningKind, Pt, RoomArea, SceneItem, Wall } from '../scene/types'
+import { Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, Wall } from '../scene/types'
 import { editor, setSelection } from './editor'
 import { commit } from './history'
 import {
@@ -179,13 +179,26 @@ export function selectionPoints(ids: string[]): Pt[] {
     if (!e) return
     if (e.kind === 'wall') pts.push(e.obj.a, e.obj.b)
     else if (e.kind === 'room') pts.push(...e.obj.points)
-    else if (e.kind === 'item') pts.push({ x: e.obj.x, z: e.obj.z })
-    else {
+    else if (e.kind === 'item') {
+      if (e.obj.kind === 'prop') pts.push(...propCorners(e.obj))
+      else pts.push({ x: e.obj.x, z: e.obj.z })
+    } else {
       const wall = getWall(e.obj.wallId)
       if (wall) pts.push(pointOnWall(wall, e.obj.offset))
     }
   })
   return pts
+}
+
+// A prop's footprint corners on the plan (heading 0 = +z, clockwise).
+export function propCorners(item: PropItem): Pt[] {
+  const r = (item.rotationY * Math.PI) / 180
+  const c = Math.cos(r)
+  const s = Math.sin(r)
+  const { w, d } = item.props
+  return [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]].map(([x, z]) => ({
+    x: item.x + x * c + z * s, z: item.z - x * s + z * c
+  }))
 }
 
 export function selectionBounds(ids: string[]): Bounds | null {
@@ -199,7 +212,7 @@ export interface TransformSession {
   ids: string[]
   walls: Map<string, { a: Pt; b: Pt; len: number }>
   rooms: Map<string, Pt[]>
-  items: Map<string, { x: number; z: number; r: number }>
+  items: Map<string, { x: number; z: number; r: number; w?: number; d?: number }>
   openings: Map<string, { offset: number }>
   // Unselected geometry connected to moved corners: it stretches instead of tearing apart.
   stretchWalls: Array<{ wall: Wall; end: 'a' | 'b'; orig: Pt }>
@@ -222,7 +235,9 @@ export function beginTransform(ids: string[]): TransformSession {
     } else if (e.kind === 'room') {
       session.rooms.set(id, e.obj.points.map(p => ({ ...p })))
     } else if (e.kind === 'item') {
-      session.items.set(id, { x: e.obj.x, z: e.obj.z, r: e.obj.rotationY })
+      session.items.set(id, e.obj.kind === 'prop'
+        ? { x: e.obj.x, z: e.obj.z, r: e.obj.rotationY, w: e.obj.props.w, d: e.obj.props.d }
+        : { x: e.obj.x, z: e.obj.z, r: e.obj.rotationY })
     } else {
       session.openings.set(id, { offset: e.obj.offset })
     }
@@ -243,7 +258,7 @@ export function beginTransform(ids: string[]): TransformSession {
 }
 
 // Apply `map` (plan point → plan point) to everything in the session; items also turn by `turn`°.
-export function applyTransform(session: TransformSession, map: (p: Pt) => Pt, turn = 0): void {
+export function applyTransform(session: TransformSession, map: (p: Pt) => Pt, turn = 0, scale?: { sx: number; sz: number }): void {
   session.walls.forEach((orig, id) => {
     const w = getWall(id)
     if (!w) return
@@ -269,6 +284,13 @@ export function applyTransform(session: TransformSession, map: (p: Pt) => Pt, tu
     item.x = round3(p.x)
     item.z = round3(p.z)
     item.rotationY = Math.round(((orig.r + turn) % 360 + 360) % 360)
+    // Scaling a selection resizes props too (their local axes, so a turned prop swaps x/z).
+    if (scale && item.kind === 'prop' && orig.w !== undefined && orig.d !== undefined) {
+      const r = (item.rotationY * Math.PI) / 180
+      const across = Math.abs(Math.cos(r)) >= Math.abs(Math.sin(r))
+      item.props.w = round3(Math.max(0.02, orig.w * (across ? scale.sx : scale.sz)))
+      item.props.d = round3(Math.max(0.01, orig.d * (across ? scale.sz : scale.sx)))
+    }
   })
   session.stretchWalls.forEach(({ wall, end, orig }) => { wall[end] = roundPt(map(orig)) })
   session.stretchRooms.forEach(({ room, index, orig }) => { room.points[index] = roundPt(map(orig)) })

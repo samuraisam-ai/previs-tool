@@ -2,7 +2,7 @@
 // Units are metres. Plan x maps to Babylon x; plan y (down the screen) maps to Babylon -z.
 // rotationY is in degrees, 0 = pointing "up" the plan (Babylon +z), clockwise positive.
 
-export type ItemKind = 'subject' | 'light' | 'camera'
+export type ItemKind = 'subject' | 'light' | 'camera' | 'prop'
 
 export interface LightProps {
   fixtureId: string
@@ -68,8 +68,41 @@ interface BaseItem {
 export interface SubjectItem extends BaseItem { kind: 'subject' }
 export interface LightItem extends BaseItem { kind: 'light'; props: LightProps }
 export interface CameraItem extends BaseItem { kind: 'camera'; props: CameraProps }
+export interface PropItem extends BaseItem { kind: 'prop'; props: PropProps }
 
-export type SceneItem = SubjectItem | LightItem | CameraItem
+export type SceneItem = SubjectItem | LightItem | CameraItem | PropItem
+
+// ── Set dressing ──────────────────────────────────────────────────────────────
+export type MaterialKind =
+  | 'wood' | 'painted' | 'fabric' | 'velvet' | 'leather' | 'metal' | 'stone' | 'concrete'
+  | 'glass' | 'mirror' | 'ceramic' | 'plastic' | 'rattan' | 'paper' | 'plant' | 'glow'
+export type PatternKind =
+  | 'none' | 'grain' | 'weave' | 'boucle' | 'stripes' | 'check' | 'herringbone' | 'chevron'
+  | 'polka' | 'floral' | 'geometric' | 'marble' | 'terrazzo' | 'tiles' | 'brick' | 'rattan' | 'image'
+
+// How one part of a prop looks. Every field is editable in the prop panel.
+export interface Finish {
+  material: MaterialKind
+  colour: string // hex
+  pattern: PatternKind
+  colour2: string // second pattern colour (grout, stripe, vein…)
+  scale: number // metres covered by one pattern tile
+  rotation: number // pattern rotation, degrees
+  roughness: number // 0 = gloss … 1 = matte
+  metalness: number // 0–1
+  opacity: number // 0–1 (glass)
+  imageId: string | null // a user's own texture or artwork
+}
+
+export interface PropProps {
+  catalogId: string
+  w: number // footprint width (m), local x
+  d: number // footprint depth (m), local z (+z is the front)
+  h: number // height (m)
+  elevation: number // base above the floor (m)
+  options: { [id: string]: string | number | boolean }
+  finishes: { [slot: string]: Finish }
+}
 
 // ── Architecture ─────────────────────────────────────────────────────────────
 export interface Pt {
