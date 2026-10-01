@@ -22,6 +22,7 @@
         </g>
         <ArchLayer :px="px" />
         <LineLayer :px="px" part="under" />
+        <MarkLayer :px="px" />
         <ItemLayer :px="px" />
         <LineLayer :px="px" part="over" />
         <OverlayLayer :px="px" :marquee="marqueeRect" />
@@ -29,6 +30,7 @@
 
       <div class="scalebar" :style="{ width: `${scaleBar.px}px` }"><span>{{ scaleBar.label }}</span></div>
       <div class="hint">{{ hint }}</div>
+      <BlockingBar />
     </div>
 
     <aside class="panel plan-panel">
@@ -48,6 +50,7 @@
           arrow keys to nudge (Shift ×10), ⌘D duplicate, ⌘C/⌘V copy/paste, Delete to remove, ⌘Z undo.
           Scroll to zoom. <b>H</b> (hand) drags the map; right-drag or Space-drag pans from any tool; <b>V</b> back to the pointer.
           <b>C</b> captures the setup (plan + light and camera legend) into a production.
+          <b>K</b> places blocking T marks for the selected subject or camera; <b>P</b> plays the blocking. <b>L</b> shows the 180° line.
         </p>
         <h4 class="section">Snapping</h4>
         <label class="check"><input type="checkbox" v-model="editor.snap.grid" /> Grid</label>
@@ -73,6 +76,10 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import LightLibrary from '../components/LightLibrary.vue'
 import PlanToolbar from '../plan/PlanToolbar.vue'
 import LineLayer from '../plan/LineLayer.vue'
+import MarkLayer from '../plan/MarkLayer.vue'
+import BlockingBar from '../plan/BlockingBar.vue'
+import { playback, stop as stopPlayback, togglePlay } from '../plan/blocking'
+import { addMark, canHaveMarks, deleteMark, headingTo, setMarkHeading, setMarkPosition } from '../plan/marks'
 import { createLine, dropLineEnd, LINE_ID, moveLineEnd, removeLine, subjectNear, toggleLine } from '../plan/lineOfAction'
 import LineOfActionPanel from '../plan/panels/LineOfActionPanel.vue'
 import WorldPanel from '../plan/panels/WorldPanel.vue'
@@ -110,11 +117,14 @@ type Gesture =
   | { type: 'room'; a: Pt }
   | { type: 'measure' }
   | { type: 'loaEnd'; end: 'a' | 'b' }
+  | { type: 'markMove'; id: string }
+  | { type: 'markAim'; id: string }
 
 const KEY_TOOLS: Record<string, Tool> = { v: 'select', h: 'pan', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
 const HINTS: Record<Tool, string> = {
   select: 'Click to select · drag to move · Shift-click / drag a box for several · handles rotate & scale · Alt = no snapping',
   pan: 'Hand: drag anywhere to move the map · scroll to zoom · V for the pointer',
+  marks: 'Blocking: click a subject or camera, then click on the plan to drop T marks 1, 2, 3… in order · drag a mark to move it, its handle to turn it · Esc when done',
   line: 'Click the two points the 180° line runs through (click on a subject to attach the end to it).',
   room: 'Drag a rectangle to create a room (walls + floor). Rooms drawn against each other share a wall.',
   wall: 'Click to place a 3 m wall, then drag its round ends to lengthen/turn it and the square handle to thicken it.',
@@ -127,7 +137,7 @@ const SNAP_PX = 10
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar, LineLayer, LineOfActionPanel, WorldPanel },
+  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar, LineLayer, LineOfActionPanel, WorldPanel, MarkLayer, BlockingBar },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -274,6 +284,10 @@ export default defineComponent({
       editor.snapPoint = null
       lineStart.value = null
       if (tool !== 'measure') editor.measure = null
+      if (tool === 'marks') {
+        const sel = editor.selection.length === 1 ? getItem(editor.selection[0]) : undefined
+        editor.markOwner = canHaveMarks(sel) && sel ? sel.id : editor.markOwner
+      } else editor.markOwner = null
     }
 
     const entitiesIn = (a: Pt, b: Pt): string[] => {
@@ -293,7 +307,10 @@ export default defineComponent({
       const el = svg.value as SVGSVGElement
       el.setPointerCapture(event.pointerId)
       const p = toWorld(event)
-      if (event.button === 1 || event.button === 2 || spaceHeld || editor.tool === 'pan') {
+      const panGesture = event.button === 1 || event.button === 2 || spaceHeld || editor.tool === 'pan'
+      // Editing while blocking plays: stop the preview so what you edit is what you see.
+      if (playback.active && !panGesture) stopPlayback()
+      if (panGesture) {
         gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz }
         panning.value = true
         return
@@ -318,6 +335,20 @@ export default defineComponent({
           const a = snapPoint(p, { free })
           editor.measure = { a, b: a, done: false }
           gesture = { type: 'measure' }
+          return
+        }
+        case 'marks': {
+          if (handle === 'mark' || handle === 'mark-aim') break
+          const clicked = id ? getItem(id) : undefined
+          if (canHaveMarks(clicked) && clicked) {
+            editor.markOwner = clicked.id
+            setSelection([clicked.id])
+            return
+          }
+          if (editor.markOwner) {
+            const mark = addMark(editor.markOwner, snapPoint(p, { free }))
+            if (mark) editor.activeMark = mark.id
+          }
           return
         }
         case 'line': {
@@ -369,6 +400,14 @@ export default defineComponent({
         } else if (handle === 'wall-thick') {
           const wall = getWall(editor.selection[0])
           if (wall) gesture = { type: 'wallThick', wall }
+        } else if (handle === 'mark' || handle === 'mark-aim') {
+          const markId = target.closest('[data-for]')?.getAttribute('data-for') ?? ''
+          const mark = scene.marks.find(m => m.id === markId)
+          if (mark) {
+            editor.activeMark = mark.id
+            if (!isSelected(mark.ownerId)) setSelection([mark.ownerId])
+            gesture = handle === 'mark' ? { type: 'markMove', id: mark.id } : { type: 'markAim', id: mark.id }
+          }
         } else if (handle === 'loa-a' || handle === 'loa-b') {
           gesture = { type: 'loaEnd', end: handle === 'loa-a' ? 'a' : 'b' }
         } else if (handle === 'aim') {
@@ -378,6 +417,7 @@ export default defineComponent({
         if (gesture) editor.dragging = true
         return
       }
+      editor.activeMark = null
       if (id) {
         if (event.shiftKey) {
           toggleSelection(id)
@@ -457,6 +497,19 @@ export default defineComponent({
           if (event.shiftKey && h.length === 2) { const u = Math.max(sx, sz); sx = u; sz = u }
           applyTransform(g.session, scaleAbout(g.anchor, sx, sz))
           editor.hud = { at: p, text: `${(g.w * sx).toFixed(2)} × ${(g.d * sz).toFixed(2)} m` }
+          break
+        }
+        case 'markMove': {
+          setMarkPosition(gesture.id, snapPoint(p, { free }))
+          break
+        }
+        case 'markAim': {
+          const mark = scene.marks.find(m => m.id === (gesture as { id: string }).id)
+          if (mark) {
+            const deg = headingTo(mark, p)
+            setMarkHeading(mark.id, free || event.shiftKey ? deg : Math.round(deg / 15) * 15)
+            editor.hud = { at: p, text: `${Math.round(((mark.rotationY % 360) + 360) % 360)}°` }
+          }
           break
         }
         case 'loaEnd': {
@@ -577,13 +630,15 @@ export default defineComponent({
       if (mod && key === 'a') { setSelection([...scene.rooms, ...scene.walls, ...scene.openings, ...scene.items].map(e => e.id)); event.preventDefault(); return }
       if (mod) return
       if (key === 'escape') {
+        editor.activeMark = null
         setTool('select')
         editor.measure = null
         clearSelection()
         return
       }
       if (key === 'delete' || key === 'backspace') {
-        if (editor.selection.includes(LINE_ID)) { removeLine(); clearSelection() }
+        if (editor.activeMark) { deleteMark(editor.activeMark); editor.activeMark = null }
+        else if (editor.selection.includes(LINE_ID)) { removeLine(); clearSelection() }
         else if (editor.selection.length) deleteIds(editor.selection)
         event.preventDefault()
         return
@@ -598,6 +653,8 @@ export default defineComponent({
       if (key === 'f') { fit(); return }
       if (key === 'c') { capture(); return }
       if (key === 'l') { lineToggle(); return }
+      if (key === 'k') { setTool('marks'); return }
+      if (key === 'p') { togglePlay(); return }
       const tool = KEY_TOOLS[key]
       if (tool) setTool(tool)
     }

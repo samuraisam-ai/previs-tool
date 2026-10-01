@@ -35,6 +35,7 @@
 
     <div v-if="item.kind === 'camera' && crossesLine(item)" class="cross-warning">⚠ This camera is across the 180° line — screen direction will flip against the other cameras.</div>
     <CameraProperties v-if="item.kind === 'camera'" :id="item.id" />
+    <MarksPanel v-if="item.kind === 'subject' || item.kind === 'camera'" :owner-id="item.id" />
 
     <div class="actions">
       <button @click="duplicate">Duplicate</button>
@@ -44,10 +45,11 @@
 </template>
 
 <script lang="ts">
-import { crossesLine } from '../lineOfAction'
 import { computed, defineComponent } from 'vue'
 import CameraProperties from '../../components/CameraProperties.vue'
 import LightProperties from '../../components/LightProperties.vue'
+import { crossesLine } from '../lineOfAction'
+import MarksPanel from './MarksPanel.vue'
 import { getBody } from '../../library/cameras'
 import { formatShutter } from '../../library/optics'
 import { illuminanceAt, nearestStop, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor } from '../../library/photometry'
@@ -57,7 +59,7 @@ import { deleteIds, duplicateSelection } from '../ops'
 
 export default defineComponent({
   name: 'ItemPanel',
-  components: { CameraProperties, LightProperties },
+  components: { CameraProperties, LightProperties, MarksPanel },
   props: {
     id: { type: String, required: true }
   },

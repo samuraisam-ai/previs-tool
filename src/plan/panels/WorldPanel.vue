@@ -69,7 +69,8 @@ export default defineComponent({
 
 <style scoped>
 .world { display: flex; flex-direction: column; gap: 8px; }
-.switch { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.switch { display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text); }
+.switch small { flex-basis: 100%; margin-left: 38px; margin-top: -6px; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
 .switch small { color: var(--muted); font-size: 11px; }
 .track { width: 30px; height: 17px; border-radius: 9px; background: #2c2f37; position: relative; transition: background 0.15s; flex-shrink: 0; }

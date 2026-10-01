@@ -103,7 +103,8 @@ export const scene = reactive<SceneDoc>({
   selectedId: null,
   activeCameraId: cameraId,
   world: defaultWorld(),
-  lineOfAction: null
+  lineOfAction: null,
+  marks: []
 })
 
 const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1 }
@@ -153,6 +154,8 @@ export function updateItem(id: string, patch: Partial<SceneItem>): void {
 export function removeItem(id: string): void {
   const index = scene.items.findIndex(item => item.id === id)
   if (index !== -1) scene.items.splice(index, 1)
+  // Its blocking marks go with it.
+  for (let i = scene.marks.length - 1; i >= 0; i--) if (scene.marks[i].ownerId === id) scene.marks.splice(i, 1)
   if (scene.selectedId === id) scene.selectedId = null
   if (scene.activeCameraId === id) scene.activeCameraId = scene.items.find(i => i.kind === 'camera')?.id ?? null
   // Cameras tracking a removed subject fall back to manual focus at the same distance.

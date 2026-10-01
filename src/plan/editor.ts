@@ -4,7 +4,7 @@ import { OpeningKind, Pt } from '../scene/types'
 
 // UI state of the Floor Plan editor (not part of the scene document, not undoable).
 
-export type Tool = 'select' | 'pan' | 'line' | 'wall' | 'room' | 'door' | 'window' | 'opening' | 'measure'
+export type Tool = 'select' | 'pan' | 'line' | 'marks' | 'wall' | 'room' | 'door' | 'window' | 'opening' | 'measure'
 
 export const OPENING_TOOLS: Record<string, OpeningKind> = { door: 'door', window: 'window', opening: 'opening' }
 
@@ -32,7 +32,10 @@ export const editor = reactive({
   // True while a pointer drag is in progress (history waits until it ends).
   dragging: false,
   // Orbit view shows walls cut at hip height so you can see in.
-  cutaway: true
+  cutaway: true,
+  // Blocking: whose marks the Marks tool places, and the mark being edited.
+  markOwner: null as string | null,
+  activeMark: null as string | null
 })
 
 export function isSelected(id: string): boolean {

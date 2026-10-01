@@ -14,7 +14,7 @@ let restoring = false
 let timer: number | undefined
 
 const snapshot = () => JSON.stringify({
-  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items, lineOfAction: scene.lineOfAction
+  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items, lineOfAction: scene.lineOfAction, marks: scene.marks
 })
 
 export function commit(): void {
@@ -35,6 +35,7 @@ function restore(state: string): void {
   scene.rooms.splice(0, scene.rooms.length, ...doc.rooms)
   scene.items.splice(0, scene.items.length, ...doc.items)
   scene.lineOfAction = doc.lineOfAction ?? null
+  scene.marks.splice(0, scene.marks.length, ...(doc.marks ?? []))
   const exists = (id: string) => [...scene.walls, ...scene.openings, ...scene.rooms, ...scene.items].some(e => e.id === id)
   setSelection(editor.selection.filter(exists))
   if (scene.activeCameraId && !exists(scene.activeCameraId)) scene.activeCameraId = scene.items.find(i => i.kind === 'camera')?.id ?? null
@@ -63,7 +64,7 @@ export const canRedo = () => future.length > 0
 
 export function startHistory(): void {
   present = snapshot()
-  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items, scene.lineOfAction], () => {
+  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items, scene.lineOfAction, scene.marks], () => {
     window.clearTimeout(timer)
     timer = window.setTimeout(() => { if (!editor.dragging) commit() }, 350)
   }, { deep: true })
@@ -74,7 +75,7 @@ export function startHistory(): void {
 export function snapshotScene(): string {
   return JSON.stringify({
     walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items,
-    world: scene.world, lineOfAction: scene.lineOfAction, activeCameraId: scene.activeCameraId
+    world: scene.world, lineOfAction: scene.lineOfAction, marks: scene.marks, activeCameraId: scene.activeCameraId
   })
 }
 
@@ -82,13 +83,14 @@ export function snapshotScene(): string {
 export function loadScene(json: string): void {
   commit()
   const doc = JSON.parse(json)
-  reserveIds([...doc.walls, ...doc.openings, ...doc.rooms, ...doc.items].map((e: { id: string }) => e.id))
+  reserveIds([...doc.walls, ...doc.openings, ...doc.rooms, ...doc.items, ...(doc.marks ?? [])].map((e: { id: string }) => e.id))
   scene.walls.splice(0, scene.walls.length, ...doc.walls)
   scene.openings.splice(0, scene.openings.length, ...doc.openings)
   scene.rooms.splice(0, scene.rooms.length, ...doc.rooms)
   scene.items.splice(0, scene.items.length, ...doc.items)
   scene.world = worldFrom(doc)
   scene.lineOfAction = doc.lineOfAction ?? null
+  scene.marks.splice(0, scene.marks.length, ...(doc.marks ?? []))
   scene.activeCameraId = doc.activeCameraId ?? scene.items.find(i => i.kind === 'camera')?.id ?? null
   setSelection([])
   commit()

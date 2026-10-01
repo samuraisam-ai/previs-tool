@@ -63,6 +63,7 @@ import { scene } from '../scene/store'
 import { CameraItem, LightItem } from '../scene/types'
 import { editor, isSelected } from './editor'
 import { crossesLine } from './lineOfAction'
+import { playback, posed } from './blocking'
 
 interface LightVisual {
   omni: boolean
@@ -150,7 +151,8 @@ export default defineComponent({
     px: { type: Number, required: true }
   },
   setup() {
-    const items = computed(() => scene.items)
+    // Drawn at their blocking pose while playback runs.
+    const items = computed(() => (playback.active ? scene.items.map(posed) : scene.items))
     const single = computed(() => (editor.selection.length === 1 ? editor.selection[0] : null))
     const cameraList = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
     const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))

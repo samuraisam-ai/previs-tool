@@ -38,6 +38,14 @@
             <option :value="false">Full height</option>
           </select>
         </label>
+        <button v-if="hasMarks" class="play" :class="{ on: playback.playing }" :title="playback.playing ? 'Pause blocking (P)' : 'Play blocking (P)'" @click="togglePlay">
+          {{ playback.playing ? '❚❚' : '▶' }} Blocking
+        </button>
+        <button v-if="playback.active" class="play" title="Stop blocking: back to the start" @click="stopPlayback">■</button>
+        <label v-if="hasMarks && viewId" title="Show the blocking tape marks through the camera">
+          <input v-model="marksInCamera" type="checkbox" />
+          Marks
+        </label>
         <label class="blackout" :class="{ on: scene.world.blackout }" title="Blackout: remove the outside/ambient light so only your fixtures light the scene">
           <input v-model="scene.world.blackout" type="checkbox" />
           Blackout
@@ -66,6 +74,7 @@ import { detectDevice } from '../live/deviceTier'
 import { FrameCapture, LiveScene } from '../live/LiveScene'
 import { renderState, TierId, TIERS } from '../live/renderState'
 import { editor } from '../plan/editor'
+import { playback, playbackDoc, stop as stopPlayback, togglePlay } from '../plan/blocking'
 import { requestCapture } from '../setups/capture'
 import { captureFrame as captureFrameRequest } from '../setups/captureFrame'
 import { initSetups } from '../setups/store'
@@ -164,7 +173,8 @@ export default defineComponent({
     const visible = () => props.active && document.visibilityState === 'visible'
     const runSync = () => {
       if (!live) return
-      live.sync(scene, archDirty)
+      // While blocking plays, subjects walk and cameras dolly along their marks.
+      live.sync(playbackDoc(scene), archDirty)
       archDirty = false
       pendingSync = false
     }
@@ -176,6 +186,10 @@ export default defineComponent({
     }
     watch(() => [scene.walls, scene.openings, scene.rooms], () => { archDirty = true }, { deep: true, flush: 'sync' })
     watch(scene, scheduleSync, { deep: true })
+    watch(() => playback.poses, () => {
+      if (playback.playing) live?.holdMotion()
+      scheduleSync()
+    })
     const updateActive = () => {
       const on = visible()
       live?.setActive(on)
@@ -213,6 +227,11 @@ export default defineComponent({
       if (viewId.value && !list.some(cam => cam.id === viewId.value)) viewId.value = null
     })
 
+    // ── Blocking ──────────────────────────────────────────────────────────
+    const hasMarks = computed(() => scene.marks.length > 0)
+    const marksInCamera = ref(false)
+    watch(marksInCamera, on => live?.setMarksInCameras(on))
+
     // ── Storyboard frames ─────────────────────────────────────────────────
     const notice = ref('')
     let noticeTimer: number | undefined
@@ -242,6 +261,7 @@ export default defineComponent({
       const target = event.target as HTMLElement
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
       if (event.key === 'c' || event.key === 'C') { captureFrame(); event.preventDefault() }
+      else if (event.key === 'p' || event.key === 'P') { togglePlay(); event.preventDefault() }
     }
     window.addEventListener('keydown', onKey)
 
@@ -258,7 +278,8 @@ export default defineComponent({
 
     return {
       container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, editor, device,
-      performance, tierLabel, autoScaleNote, renderState, notice, captureFrame
+      performance, tierLabel, autoScaleNote, renderState, notice, captureFrame,
+      playback, togglePlay, stopPlayback, hasMarks, marksInCamera
     }
   }
 })
@@ -302,6 +323,8 @@ canvas {
   color: var(--muted);
 }
 .overlay .blackout { cursor: pointer; }
+.overlay .play { font-size: 13px; padding: 6px 10px; background: rgba(20, 20, 24, 0.85); border-radius: 6px; }
+.overlay .play.on { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
 .overlay .blackout input { accent-color: var(--accent); margin: 0; }
 .overlay .blackout.on { color: #1a1a1a; background: var(--accent); }
 .preparing {

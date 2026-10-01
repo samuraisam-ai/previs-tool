@@ -18,7 +18,9 @@ export const LAYER = {
   COMMON: 0x0fffffff,
   FULL_WALLS: 0x10000000,
   CUT_WALLS: 0x20000000,
-  CEILING: 0x40000000
+  CEILING: 0x40000000,
+  // Blocking tape marks: always in the orbit view, optional through cameras.
+  MARKS: 0x80000000
 }
 export const CUT_HEIGHT = 1.2
 

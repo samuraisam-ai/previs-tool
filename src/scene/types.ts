@@ -127,6 +127,21 @@ export interface SceneDoc {
   world: WorldLight
   // The 180° line (line of action), if one has been placed.
   lineOfAction: LineOfAction | null
+  // Blocking: numbered T marks for subjects and cameras.
+  marks: Mark[]
+}
+
+export type MarkPace = 'slow' | 'normal' | 'fast'
+export interface Mark {
+  id: string
+  ownerId: string // subject or camera
+  order: number // 1, 2, 3…
+  x: number
+  z: number
+  rotationY: number // the way the owner faces on the mark (same convention as items)
+  note: string
+  hold: number // seconds spent on the mark during playback
+  pace: MarkPace // how fast the owner travels *to* this mark
 }
 
 export type WorldPreset = 'morning' | 'day' | 'evening' | 'night'

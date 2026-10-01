@@ -25,6 +25,8 @@ import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } 
 import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
 import { worldLux } from '../scene/world'
+import { ownerColour } from '../plan/marks'
+import { TapeMarks } from './TapeMarks'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 import { LightPool, LightRequest, Slot } from './LightPool'
 import { renderState, Tier, TIERS } from './renderState'
@@ -120,6 +122,8 @@ export class LiveScene {
   private cameraGeometry = new Map<string, string>()
   private slots = new Map<string, Slot>()
   private worldKey = ''
+  private tapeMarks: TapeMarks
+  private marksInCameras = false
 
   constructor(private canvas: HTMLCanvasElement) {
     // adaptToDeviceRatio: render at the display's pixel density; quality is then set by setQuality().
@@ -151,6 +155,7 @@ export class LiveScene {
     this.ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), this.scene)
 
     this.architecture = new Architecture(this.scene, (name, color, roughness) => this.createSurface(name, color, roughness))
+    this.tapeMarks = new TapeMarks(this.scene, LAYER.MARKS)
     this.applyLayers()
     // Slightly glossy skin gives the polarizer something to cut (floors have per-finish sheen).
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
@@ -372,10 +377,26 @@ export class LiveScene {
   }
 
   private applyLayers(): void {
-    this.orbitCamera.layerMask = LAYER.COMMON | (this.cutaway ? LAYER.CUT_WALLS : LAYER.FULL_WALLS)
+    this.orbitCamera.layerMask = LAYER.COMMON | LAYER.MARKS | (this.cutaway ? LAYER.CUT_WALLS : LAYER.FULL_WALLS)
     this.entries.forEach(entry => {
-      if (entry.viewCamera) entry.viewCamera.layerMask = LAYER.COMMON | LAYER.FULL_WALLS | LAYER.CEILING
+      if (entry.viewCamera) entry.viewCamera.layerMask = this.viewMask()
     })
+  }
+
+  private viewMask(): number {
+    return LAYER.COMMON | LAYER.FULL_WALLS | LAYER.CEILING | (this.marksInCameras ? LAYER.MARKS : 0)
+  }
+
+  // Show the blocking tape marks when looking through a camera (they always show in orbit).
+  setMarksInCameras(on: boolean): void {
+    this.marksInCameras = on
+    this.applyLayers()
+    this.requestRender()
+  }
+
+  // Draw continuously at motion resolution for a moment (blocking playback).
+  holdMotion(): void {
+    this.startMotion()
   }
 
   // Bring the 3D scene in line with the document. Only what changed is touched: unchanged items are
@@ -406,6 +427,9 @@ export class LiveScene {
 
     // Equipment stays readable at any exposure.
     this.markerMaterial.emissiveColor = new Color3(0.035, 0.035, 0.04).scale(key / Math.PI)
+    // Blocking tape on the floor, also readable at any exposure.
+    this.tapeMarks.setBrightness((0.5 * key) / Math.PI)
+    if (this.tapeMarks.sync(doc.marks ?? [], ownerColour)) this.requestRender()
 
     let lightsChanged = false
     let subjectsChanged = false
@@ -761,7 +785,7 @@ export class LiveScene {
     viewCamera.fovMode = Camera.FOVMODE_HORIZONTAL_FIXED
     viewCamera.minZ = 0.05
     viewCamera.maxZ = 200
-    viewCamera.layerMask = LAYER.COMMON | LAYER.FULL_WALLS | LAYER.CEILING
+    viewCamera.layerMask = this.viewMask()
     entry.viewCamera = viewCamera
   }
 

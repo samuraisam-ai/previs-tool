@@ -76,6 +76,7 @@ const ICONS: Record<string, string> = {
   undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
   redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
   fit: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+  marks: 'M5 6h14M12 6v12M5 20l2-2M17 20l2-2',
   line: 'M3 18L21 6M7 20a2 2 0 1 0 0-.01M17 6a2 2 0 1 0 0-.01',
   capture: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'
 }
@@ -107,12 +108,13 @@ const SECTIONS: Array<{ title: string; items: MenuItem[] }> = [
     items: [
       { id: 'subject', label: 'Subject', hint: 'A person in the scene', icon: 'subject', add: 'subject' },
       { id: 'light', label: 'Light…', hint: 'Choose from the Nanlite library', icon: 'light', add: 'light' },
-      { id: 'camera', label: 'Camera', hint: 'Sony FX3 with Aizu primes', icon: 'camera', add: 'camera' }
+      { id: 'camera', label: 'Camera', hint: 'Sony FX3 with Aizu primes', icon: 'camera', add: 'camera' },
+      { id: 'marks', label: 'Blocking marks', hint: 'T marks for a subject or camera', icon: 'marks', key: 'K', tool: 'marks' }
     ]
   }
 ]
 
-const LABELS: Record<string, string> = { room: 'Room', wall: 'Wall', door: 'Door', window: 'Window', opening: 'Doorway', line: '180° line' }
+const LABELS: Record<string, string> = { room: 'Room', wall: 'Wall', door: 'Door', window: 'Window', opening: 'Doorway', line: '180° line', marks: 'Blocking marks' }
 
 export default defineComponent({
   name: 'PlanToolbar',

@@ -195,6 +195,16 @@ function drawLegend(g: CanvasRenderingContext2D, doc: SceneDoc, meta: CaptureMet
     section(`Camera${cameras.length > 1 ? 's' : ''}`)
     cameras.forEach(c => entry(c.name, cameraLine(c)))
   }
+  const marks = doc.marks ?? []
+  if (marks.length) {
+    section('Blocking')
+    const counts = new Map<string, number>()
+    marks.forEach(m => counts.set(m.ownerId, (counts.get(m.ownerId) ?? 0) + 1))
+    g.fillStyle = '#e6e7ea'
+    g.font = font(15)
+    const text = Array.from(counts.entries()).map(([id, n]) => `${doc.items.find(i => i.id === id)?.name ?? 'Unknown'}: ${n} mark${n === 1 ? '' : 's'}`).join(' · ')
+    y = wrapText(g, text, x, y, w, 20, 2)
+  }
   section('World light')
   g.fillStyle = '#e6e7ea'
   g.font = font(15)
