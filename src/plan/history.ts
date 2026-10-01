@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { reserveIds, scene } from '../scene/store'
+import { worldFrom } from '../scene/world'
 import { editor, setSelection } from './editor'
 
 // Undo/redo for everything you build on the plan: snapshots of the document's content, taken once
@@ -13,7 +14,7 @@ let restoring = false
 let timer: number | undefined
 
 const snapshot = () => JSON.stringify({
-  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items
+  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items, lineOfAction: scene.lineOfAction
 })
 
 export function commit(): void {
@@ -33,6 +34,7 @@ function restore(state: string): void {
   scene.openings.splice(0, scene.openings.length, ...doc.openings)
   scene.rooms.splice(0, scene.rooms.length, ...doc.rooms)
   scene.items.splice(0, scene.items.length, ...doc.items)
+  scene.lineOfAction = doc.lineOfAction ?? null
   const exists = (id: string) => [...scene.walls, ...scene.openings, ...scene.rooms, ...scene.items].some(e => e.id === id)
   setSelection(editor.selection.filter(exists))
   if (scene.activeCameraId && !exists(scene.activeCameraId)) scene.activeCameraId = scene.items.find(i => i.kind === 'camera')?.id ?? null
@@ -61,7 +63,7 @@ export const canRedo = () => future.length > 0
 
 export function startHistory(): void {
   present = snapshot()
-  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items], () => {
+  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items, scene.lineOfAction], () => {
     window.clearTimeout(timer)
     timer = window.setTimeout(() => { if (!editor.dragging) commit() }, 350)
   }, { deep: true })
@@ -72,7 +74,7 @@ export function startHistory(): void {
 export function snapshotScene(): string {
   return JSON.stringify({
     walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items,
-    ambientLux: scene.ambientLux, activeCameraId: scene.activeCameraId
+    world: scene.world, lineOfAction: scene.lineOfAction, activeCameraId: scene.activeCameraId
   })
 }
 
@@ -85,7 +87,8 @@ export function loadScene(json: string): void {
   scene.openings.splice(0, scene.openings.length, ...doc.openings)
   scene.rooms.splice(0, scene.rooms.length, ...doc.rooms)
   scene.items.splice(0, scene.items.length, ...doc.items)
-  if (typeof doc.ambientLux === 'number') scene.ambientLux = doc.ambientLux
+  scene.world = worldFrom(doc)
+  scene.lineOfAction = doc.lineOfAction ?? null
   scene.activeCameraId = doc.activeCameraId ?? scene.items.find(i => i.kind === 'camera')?.id ?? null
   setSelection([])
   commit()

@@ -17,13 +17,14 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { Scene } from '@babylonjs/core/scene'
 import { getBody } from '../library/cameras'
-import { kelvinToSrgb, luminance, RGB, srgbToLinear } from '../library/colour'
+import { kelvinToSrgb, lightColour, luminance, RGB, srgbToLinear } from '../library/colour'
 import { getLens } from '../library/lenses'
 import { focusDistance, horizontalFov, imageWidthMm, keyLux } from '../library/optics'
 import { headingDirection, illuminanceAt, ResolvedLight, resolveLight, subjectMeterPoint } from '../library/photometry'
 import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
 import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
+import { worldLux } from '../scene/world'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 import { LightPool, LightRequest, Slot } from './LightPool'
 import { renderState, Tier, TIERS } from './renderState'
@@ -118,6 +119,7 @@ export class LiveScene {
   // Camera placement/lens only (not exposure settings): what the depth map depends on.
   private cameraGeometry = new Map<string, string>()
   private slots = new Map<string, Slot>()
+  private worldKey = ''
 
   constructor(private canvas: HTMLCanvasElement) {
     // adaptToDeviceRatio: render at the display's pixel density; quality is then set by setQuality().
@@ -454,11 +456,18 @@ export class LiveScene {
     if (this.viewingId && !this.entries.has(this.viewingId)) this.viewThrough(null)
 
     if (lightsChanged || subjectsChanged || this.slots.size === 0) this.assignLights(doc)
-    // Ambient = estimated room bounce (tinted by the lights) + a little base fill.
-    if (lightsChanged || rebuilt) {
+    // Ambient = estimated room bounce (tinted by the lights) + light from outside (time of day,
+    // its own colour temperature). Blackout removes the outside part only.
+    const worldKey = JSON.stringify(doc.world)
+    if (lightsChanged || rebuilt || worldKey !== this.worldKey) {
+      this.worldKey = worldKey
       const bounce = sceneBounce(doc)
-      this.ambient.intensity = bounce.lux + doc.ambientLux
-      this.ambient.diffuse = new Color3(bounce.colour[0], bounce.colour[1], bounce.colour[2])
+      const outside = worldLux(doc.world)
+      const sky = lightColour('cct', doc.world.kelvin, 0, 0, 0)
+      const total = bounce.lux + outside
+      const mix = (i: number) => (total > 0 ? (bounce.colour[i] * bounce.lux + sky[i] * outside) / total : 1)
+      this.ambient.intensity = total
+      this.ambient.diffuse = new Color3(mix(0), mix(1), mix(2))
       this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
     }
     if (rebuilt || subjectsChanged) this.pool.refreshShadows(this.shadowCasters())

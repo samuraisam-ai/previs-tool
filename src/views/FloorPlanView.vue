@@ -1,7 +1,7 @@
 <template>
   <div class="plan">
     <div ref="area" class="canvas-area">
-      <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" />
+      <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" @line="lineToggle" />
       <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
 
       <!-- SVG units are metres. svg y = -world z, so "up" on the plan is +z in 3D. -->
@@ -21,7 +21,9 @@
           <line v-for="l in grid.lines" :key="l.k" :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2" :class="{ major: l.major }" />
         </g>
         <ArchLayer :px="px" />
+        <LineLayer :px="px" part="under" />
         <ItemLayer :px="px" />
+        <LineLayer :px="px" part="over" />
         <OverlayLayer :px="px" :marquee="marqueeRect" />
       </svg>
 
@@ -34,6 +36,7 @@
       <WallPanel v-else-if="panel === 'wall'" :id="editor.selection[0]" />
       <OpeningPanel v-else-if="panel === 'opening'" :id="editor.selection[0]" />
       <SelectionPanel v-else-if="panel === 'selection'" :ids="editor.selection" />
+      <LineOfActionPanel v-else-if="panel === 'line'" />
       <div v-else class="panel-body">
         <h4>Floor plan</h4>
         <p class="readout">
@@ -59,6 +62,7 @@
         </label>
         <label class="check"><input type="checkbox" v-model="editor.snap.objects" /> Wall ends &amp; corners</label>
         <p class="readout">Hold Alt while dragging to place freely.</p>
+        <WorldPanel />
       </div>
     </aside>
   </div>
@@ -68,6 +72,10 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import LightLibrary from '../components/LightLibrary.vue'
 import PlanToolbar from '../plan/PlanToolbar.vue'
+import LineLayer from '../plan/LineLayer.vue'
+import { createLine, dropLineEnd, LINE_ID, moveLineEnd, removeLine, subjectNear, toggleLine } from '../plan/lineOfAction'
+import LineOfActionPanel from '../plan/panels/LineOfActionPanel.vue'
+import WorldPanel from '../plan/panels/WorldPanel.vue'
 import { requestCapture } from '../setups/capture'
 import { capturePlan } from '../setups/capturePlan'
 import { initSetups } from '../setups/store'
@@ -101,11 +109,13 @@ type Gesture =
   | { type: 'aim'; item: SceneItem }
   | { type: 'room'; a: Pt }
   | { type: 'measure' }
+  | { type: 'loaEnd'; end: 'a' | 'b' }
 
 const KEY_TOOLS: Record<string, Tool> = { v: 'select', h: 'pan', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
 const HINTS: Record<Tool, string> = {
   select: 'Click to select · drag to move · Shift-click / drag a box for several · handles rotate & scale · Alt = no snapping',
   pan: 'Hand: drag anywhere to move the map · scroll to zoom · V for the pointer',
+  line: 'Click the two points the 180° line runs through (click on a subject to attach the end to it).',
   room: 'Drag a rectangle to create a room (walls + floor). Rooms drawn against each other share a wall.',
   wall: 'Click to place a 3 m wall, then drag its round ends to lengthen/turn it and the square handle to thicken it.',
   door: 'Hover a wall and click to add a door. Double-click a door to open/close it.',
@@ -117,7 +127,7 @@ const SNAP_PX = 10
 
 export default defineComponent({
   name: 'FloorPlanView',
-  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar },
+  components: { ArchLayer, ItemLayer, OverlayLayer, ItemPanel, WallPanel, OpeningPanel, SelectionPanel, LightLibrary, PlanToolbar, LineLayer, LineOfActionPanel, WorldPanel },
   props: {
     active: { type: Boolean, default: true }
   },
@@ -131,6 +141,8 @@ export default defineComponent({
     // What was under the pointer on the last press (pointer capture retargets dblclick to the svg).
     let lastDownId: string | null = null
     const marquee = ref<{ a: Pt; b: Pt } | null>(null)
+    // First click of the 180° line tool.
+    const lineStart = ref<Pt | null>(null)
 
     // ── Viewport ──────────────────────────────────────────────────────────
     const px = computed(() => 1 / editor.view.scale)
@@ -260,6 +272,7 @@ export default defineComponent({
       editor.openingPreview = null
       editor.draft = null
       editor.snapPoint = null
+      lineStart.value = null
       if (tool !== 'measure') editor.measure = null
     }
 
@@ -307,6 +320,20 @@ export default defineComponent({
           gesture = { type: 'measure' }
           return
         }
+        case 'line': {
+          const q = snapPoint(p, { free })
+          if (!lineStart.value) lineStart.value = q
+          else {
+            const a = lineStart.value
+            lineStart.value = null
+            if (dist(a, q) > 0.1) {
+              createLine(a, q, subjectNear(a), subjectNear(q))
+              setTool('select')
+              setSelection([LINE_ID])
+            }
+          }
+          return
+        }
         case 'door':
         case 'window':
         case 'opening': {
@@ -342,6 +369,8 @@ export default defineComponent({
         } else if (handle === 'wall-thick') {
           const wall = getWall(editor.selection[0])
           if (wall) gesture = { type: 'wallThick', wall }
+        } else if (handle === 'loa-a' || handle === 'loa-b') {
+          gesture = { type: 'loaEnd', end: handle === 'loa-a' ? 'a' : 'b' }
         } else if (handle === 'aim') {
           const item = getItem(target.closest('[data-for]')?.getAttribute('data-for') ?? null)
           if (item) gesture = { type: 'aim', item }
@@ -430,6 +459,10 @@ export default defineComponent({
           editor.hud = { at: p, text: `${(g.w * sx).toFixed(2)} × ${(g.d * sz).toFixed(2)} m` }
           break
         }
+        case 'loaEnd': {
+          moveLineEnd(gesture.end, snapPoint(p, { free }))
+          break
+        }
         case 'wallEnd': {
           const g = gesture
           const q = snapPoint(p, { exclude: new Set([g.wall.id]), from: g.fixed, free, coarseAngle: event.shiftKey })
@@ -478,6 +511,7 @@ export default defineComponent({
         setTool('select')
       }
       if (g?.type === 'measure' && editor.measure) editor.measure.done = true
+      if (g?.type === 'loaEnd') dropLineEnd(g.end)
       marquee.value = null
       editor.hud = null
       editor.snapPoint = null
@@ -500,6 +534,7 @@ export default defineComponent({
       const sel = editor.selection
       if (!sel.length) return null
       if (sel.length > 1) return 'selection'
+      if (sel[0] === LINE_ID) return 'line'
       const e = getEntity(sel[0])
       if (!e) return null
       return e.kind === 'item' ? 'item' : e.kind === 'wall' ? 'wall' : e.kind === 'opening' ? 'opening' : 'selection'
@@ -548,7 +583,8 @@ export default defineComponent({
         return
       }
       if (key === 'delete' || key === 'backspace') {
-        if (editor.selection.length) deleteIds(editor.selection)
+        if (editor.selection.includes(LINE_ID)) { removeLine(); clearSelection() }
+        else if (editor.selection.length) deleteIds(editor.selection)
         event.preventDefault()
         return
       }
@@ -561,6 +597,7 @@ export default defineComponent({
       }
       if (key === 'f') { fit(); return }
       if (key === 'c') { capture(); return }
+      if (key === 'l') { lineToggle(); return }
       const tool = KEY_TOOLS[key]
       if (tool) setTool(tool)
     }
@@ -591,6 +628,13 @@ export default defineComponent({
       resizeObserver?.disconnect()
     })
 
+    // ── 180° line ─────────────────────────────────────────────────────────
+    const lineToggle = () => {
+      const result = toggleLine()
+      if (result === 'need-points') setTool('line')
+      else if (result === 'hidden' && editor.selection.includes(LINE_ID)) clearSelection()
+    }
+
     // ── Capture to Setups ─────────────────────────────────────────────────
     let capturing = false
     const capture = async () => {
@@ -605,7 +649,7 @@ export default defineComponent({
     }
 
     return {
-      capture,
+      capture, lineToggle,
       svg, area, editor, setTool, showLibrary, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
       onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
     }

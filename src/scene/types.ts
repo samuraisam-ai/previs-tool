@@ -123,5 +123,27 @@ export interface SceneDoc {
   selectedId: string | null
   // The camera whose exposure drives the orbit view and the light meter.
   activeCameraId: string | null
-  ambientLux: number
+  // Ambient light from outside (time of day), and the Blackout switch.
+  world: WorldLight
+  // The 180° line (line of action), if one has been placed.
+  lineOfAction: LineOfAction | null
+}
+
+export type WorldPreset = 'morning' | 'day' | 'evening' | 'night'
+export interface WorldLight {
+  preset: WorldPreset
+  percent: number // 0–200 % of the preset's level
+  kelvin: number
+  blackout: boolean // ambient off (fixtures only); `percent` is kept for when it's turned back on
+}
+
+export interface LineOfAction {
+  a: Pt
+  b: Pt
+  // While attached, an end follows that subject.
+  aSubject: string | null
+  bSubject: string | null
+  visible: boolean
+  // Which side cameras belong on: 0 = automatic (where most cameras are), ±1 = chosen.
+  side: number
 }

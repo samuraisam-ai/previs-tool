@@ -46,6 +46,9 @@
     <button class="tb icon" title="Redo (⇧⌘Z)" @click="$emit('redo')"><svg viewBox="0 0 24 24"><path :d="ICONS.redo" /></svg></button>
     <button class="tb icon" title="Fit plan to view (F)" @click="$emit('fit')"><svg viewBox="0 0 24 24"><path :d="ICONS.fit" /></svg></button>
     <span class="sep"></span>
+    <button :class="['tb', 'loa', { on: lineOn }]" :aria-pressed="lineOn" title="Show / hide the 180° line (L)" @click="$emit('line')">
+      <svg viewBox="0 0 24 24"><path :d="ICONS.line" /></svg><span>180°</span>
+    </button>
     <button class="tb capture" title="Capture this setup to a production (C)" @click="$emit('capture')">
       <svg viewBox="0 0 24 24"><path :d="ICONS.capture" /></svg><span>Capture</span>
     </button>
@@ -54,6 +57,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { scene } from '../scene/store'
 
 // Line icons (24×24, stroked).
 const ICONS: Record<string, string> = {
@@ -72,6 +76,7 @@ const ICONS: Record<string, string> = {
   undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
   redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
   fit: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+  line: 'M3 18L21 6M7 20a2 2 0 1 0 0-.01M17 6a2 2 0 1 0 0-.01',
   capture: 'M4 8h3l2-3h6l2 3h3v11H4zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z'
 }
 
@@ -107,14 +112,14 @@ const SECTIONS: Array<{ title: string; items: MenuItem[] }> = [
   }
 ]
 
-const LABELS: Record<string, string> = { room: 'Room', wall: 'Wall', door: 'Door', window: 'Window', opening: 'Doorway' }
+const LABELS: Record<string, string> = { room: 'Room', wall: 'Wall', door: 'Door', window: 'Window', opening: 'Doorway', line: '180° line' }
 
 export default defineComponent({
   name: 'PlanToolbar',
   props: {
     tool: { type: String, required: true }
   },
-  emits: ['tool', 'add', 'undo', 'redo', 'fit', 'capture'],
+  emits: ['tool', 'add', 'undo', 'redo', 'fit', 'capture', 'line'],
   setup(props, { emit }) {
     const open = ref(false)
     const bar = ref<HTMLDivElement | null>(null)
@@ -123,6 +128,7 @@ export default defineComponent({
     const compact = ref(false)
 
     const placing = computed(() => props.tool !== 'select' && props.tool !== 'pan')
+    const lineOn = computed(() => !!scene.lineOfAction?.visible)
     const placingLabel = computed(() => LABELS[props.tool] ?? '')
 
     const focusItem = (index: number) => {
@@ -168,7 +174,7 @@ export default defineComponent({
       observer?.disconnect()
     })
 
-    return { open, bar, menu, menuRoot, compact, placing, placingLabel, toggle, choose, onMenuKey, SECTIONS, ICONS }
+    return { open, bar, menu, menuRoot, compact, placing, placingLabel, lineOn, toggle, choose, onMenuKey, SECTIONS, ICONS }
   }
 })
 </script>

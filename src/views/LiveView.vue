@@ -38,6 +38,10 @@
             <option :value="false">Full height</option>
           </select>
         </label>
+        <label class="blackout" :class="{ on: scene.world.blackout }" title="Blackout: remove the outside/ambient light so only your fixtures light the scene">
+          <input v-model="scene.world.blackout" type="checkbox" />
+          Blackout
+        </label>
         <label :title="`Detected: ${device.gpu} (${device.reason}). Colour, exposure and bokeh are identical on every level; only smoothness and shadow detail change.`">
           Performance
           <select v-model="performance">
@@ -297,6 +301,9 @@ canvas {
 .hint {
   color: var(--muted);
 }
+.overlay .blackout { cursor: pointer; }
+.overlay .blackout input { accent-color: var(--accent); margin: 0; }
+.overlay .blackout.on { color: #1a1a1a; background: var(--accent); }
 .preparing {
   position: absolute;
   right: 12px;

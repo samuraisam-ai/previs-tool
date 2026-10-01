@@ -10,6 +10,7 @@ import { boundsOf } from '../plan/geometry'
 import { snapshotScene } from '../plan/history'
 import { scene } from '../scene/store'
 import { CameraItem, LightItem, Pt, SceneDoc } from '../scene/types'
+import { worldFrom, worldSummary } from '../scene/world'
 import { CaptureMeta, CaptureRequest, containIn, toBlob, wrapText } from './capture'
 
 // Captures the Floor Plan as a lighting diagram: the plan framed to fit, without selection or
@@ -194,6 +195,10 @@ function drawLegend(g: CanvasRenderingContext2D, doc: SceneDoc, meta: CaptureMet
     section(`Camera${cameras.length > 1 ? 's' : ''}`)
     cameras.forEach(c => entry(c.name, cameraLine(c)))
   }
+  section('World light')
+  g.fillStyle = '#e6e7ea'
+  g.font = font(15)
+  y = wrapText(g, worldSummary(worldFrom(doc)), x, y, w, 20, 2)
   if (subjects.length) {
     section('Subjects')
     g.fillStyle = '#e6e7ea'

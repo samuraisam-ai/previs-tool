@@ -33,6 +33,7 @@
       <div class="readout">Direct light plus estimated room bounce; shadows aren't counted.</div>
     </template>
 
+    <div v-if="item.kind === 'camera' && crossesLine(item)" class="cross-warning">⚠ This camera is across the 180° line — screen direction will flip against the other cameras.</div>
     <CameraProperties v-if="item.kind === 'camera'" :id="item.id" />
 
     <div class="actions">
@@ -43,6 +44,7 @@
 </template>
 
 <script lang="ts">
+import { crossesLine } from '../lineOfAction'
 import { computed, defineComponent } from 'vue'
 import CameraProperties from '../../components/CameraProperties.vue'
 import LightProperties from '../../components/LightProperties.vue'
@@ -89,7 +91,7 @@ export default defineComponent({
     const remove = () => deleteIds([props.id])
     const duplicate = () => duplicateSelection([props.id])
 
-    return {
+    return { crossesLine,
       item, meter, cameraList, scene, remove, duplicate,
       kindLabel: { subject: 'Subject', light: 'Light', camera: 'Camera' },
       isos: getBody('fx3').isos,
@@ -98,3 +100,7 @@ export default defineComponent({
   }
 })
 </script>
+
+<style scoped>
+.cross-warning { font-size: 12px; line-height: 1.4; padding: 8px 10px; border-radius: 6px; background: rgba(255, 59, 48, 0.12); color: #ff8a83; margin: 8px 0; }
+</style>

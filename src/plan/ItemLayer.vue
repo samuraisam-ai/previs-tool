@@ -28,6 +28,7 @@
           <path class="fov" :d="wedge(camViews[item.id].fov, camViews[item.id].length)" pointer-events="none" />
           <path class="dof" :d="camViews[item.id].dofPath" pointer-events="none" />
           <path class="focus-arc" :d="camViews[item.id].focusPath" pointer-events="none" />
+          <circle v-if="crossesLine(item)" class="cross-ring" r="0.36"><title>This camera crosses the 180° line</title></circle>
           <rect class="body" x="-0.14" y="-0.1" width="0.28" height="0.24" rx="0.03" />
           <rect class="lens" x="-0.07" y="-0.2" width="0.14" height="0.1" />
         </template>
@@ -61,6 +62,7 @@ import { ResolvedLight, resolveLight } from '../library/photometry'
 import { scene } from '../scene/store'
 import { CameraItem, LightItem } from '../scene/types'
 import { editor, isSelected } from './editor'
+import { crossesLine } from './lineOfAction'
 
 interface LightVisual {
   omni: boolean
@@ -191,7 +193,7 @@ export default defineComponent({
       return result
     })
 
-    return { items, single, camViews, visuals, wedge, isSelected }
+    return { items, single, camViews, visuals, wedge, isSelected, crossesLine }
   }
 })
 </script>
@@ -211,6 +213,7 @@ export default defineComponent({
 .light .fixture .glow { stroke: #0d0e11; stroke-width: 0.01; }
 .light.selected .fixture .body { stroke: var(--accent); stroke-width: 0.03; }
 .camera .body, .camera .lens { fill: #8a8f9c; }
+.cross-ring { fill: rgba(255, 59, 48, 0.15); stroke: #ff3b30; stroke-width: 2px; vector-effect: non-scaling-stroke; }
 .camera .dof { fill: rgba(120, 170, 255, 0.13); }
 .camera .focus-arc { fill: none; stroke: #ffb547; stroke-width: 0.025; }
 .camera .fov { fill: rgba(120, 170, 255, 0.07); stroke: rgba(120, 170, 255, 0.6); stroke-width: 0.015; stroke-dasharray: 0.08 0.06; }

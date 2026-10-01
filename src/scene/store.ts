@@ -5,6 +5,7 @@ import { defaultModifier, getModifier, modifiersFor } from '../library/modifiers
 import { Bounce, bounceLight, illuminanceAt, isZoomable, luminousFlux } from '../library/photometry'
 import { DEFAULT_LENS } from '../library/lenses'
 import { CameraItem, CameraProps, ItemKind, LightItem, LightProps, Pt, RoomArea, SceneDoc, SceneItem, Wall } from './types'
+import { defaultWorld } from './world'
 
 export const DEFAULT_WALL_HEIGHT = 2.7
 export const DEFAULT_WALL_THICKNESS = 0.12
@@ -101,7 +102,8 @@ export const scene = reactive<SceneDoc>({
   ],
   selectedId: null,
   activeCameraId: cameraId,
-  ambientLux: 0.5
+  world: defaultWorld(),
+  lineOfAction: null
 })
 
 const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1 }
