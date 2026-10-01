@@ -83,6 +83,8 @@ export interface Wall {
   b: Pt
   thickness: number
   height: number
+  // Ends unlinked from the corner they touch: they no longer drag (or get dragged by) other walls.
+  detached?: { a?: boolean; b?: boolean }
 }
 
 export type OpeningKind = 'door' | 'double-door' | 'sliding-door' | 'opening' | 'window'

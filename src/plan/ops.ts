@@ -216,7 +216,9 @@ export function beginTransform(ids: string[]): TransformSession {
     if (!e) return
     if (e.kind === 'wall') {
       session.walls.set(id, { a: { ...e.obj.a }, b: { ...e.obj.b }, len: wallLength(e.obj) })
-      moved.push(e.obj.a, e.obj.b)
+      // A detached end moves alone: it doesn't pull the corner it touches.
+      if (!e.obj.detached?.a) moved.push(e.obj.a)
+      if (!e.obj.detached?.b) moved.push(e.obj.b)
     } else if (e.kind === 'room') {
       session.rooms.set(id, e.obj.points.map(p => ({ ...p })))
     } else if (e.kind === 'item') {
@@ -228,7 +230,7 @@ export function beginTransform(ids: string[]): TransformSession {
   scene.walls.forEach(w => {
     if (session.walls.has(w.id)) return
     ;(['a', 'b'] as const).forEach(end => {
-      if (moved.some(p => same(p, w[end]))) session.stretchWalls.push({ wall: w, end, orig: { ...w[end] } })
+      if (!w.detached?.[end] && moved.some(p => same(p, w[end]))) session.stretchWalls.push({ wall: w, end, orig: { ...w[end] } })
     })
   })
   scene.rooms.forEach(r => {
@@ -294,8 +296,12 @@ export function beginEndpointDrag(wall: Wall, end: 'a' | 'b'): TransformSession 
     ids: [], walls: new Map(), rooms: new Map(), items: new Map(), openings: new Map(), stretchWalls: [], stretchRooms: []
   }
   const orig = { ...wall[end] }
+  if (wall.detached?.[end]) {
+    session.stretchWalls.push({ wall, end, orig })
+    return session
+  }
   scene.walls.forEach(w => (['a', 'b'] as const).forEach(e => {
-    if (same(w[e], orig)) session.stretchWalls.push({ wall: w, end: e, orig: { ...w[e] } })
+    if ((w === wall || !w.detached?.[e]) && same(w[e], orig)) session.stretchWalls.push({ wall: w, end: e, orig: { ...w[e] } })
   }))
   scene.rooms.forEach(r => r.points.forEach((p, index) => {
     if (same(p, orig)) session.stretchRooms.push({ room: r, index, orig: { ...p } })
@@ -310,6 +316,46 @@ export function moveEndpoint(session: TransformSession, to: Pt): void {
     const w = getWall(o.wallId)
     if (w && session.stretchWalls.some(s => s.wall === w)) o.offset = clampOffset(w, o.offset, o.width)
   })
+}
+
+// ── Corner links ──────────────────────────────────────────────────────────────
+// What a wall end is joined to: other wall ends at the same point (not detached) and room corners.
+export function cornerLinks(wall: Wall, end: 'a' | 'b'): { walls: number; rooms: number } {
+  const p = wall[end]
+  let walls = 0
+  scene.walls.forEach(w => (['a', 'b'] as const).forEach(e => {
+    if (w !== wall && !w.detached?.[e] && same(w[e], p)) walls++
+  }))
+  const rooms = scene.rooms.filter(r => r.points.some(q => same(q, p))).length
+  return { walls, rooms }
+}
+
+export function detachCorner(wall: Wall, end: 'a' | 'b'): void {
+  record(() => { wall.detached = { ...wall.detached, [end]: true } })
+}
+
+// Re-link an end: snap it onto the nearest wall end or room corner within `reach` metres.
+// Returns false (and changes nothing) when nothing is in reach.
+export function attachCorner(wall: Wall, end: 'a' | 'b', reach = 0.3): boolean {
+  const p = wall[end]
+  let best = null as Pt | null
+  let bestD = reach
+  const consider = (q: Pt) => {
+    const d = dist(p, q)
+    if (d <= bestD) { best = q; bestD = d }
+  }
+  scene.walls.forEach(w => { if (w !== wall) (['a', 'b'] as const).forEach(e => consider(w[e])) })
+  scene.rooms.forEach(r => r.points.forEach(consider))
+  if (!best) return false
+  const target = roundPt(best as Pt)
+  record(() => {
+    const flags = { ...wall.detached }
+    delete flags[end]
+    wall.detached = flags.a || flags.b ? flags : undefined
+    wall[end] = target
+    scene.openings.forEach(o => { if (o.wallId === wall.id) o.offset = clampOffset(wall, o.offset, o.width) })
+  })
+  return true
 }
 
 // ── Exact dimensions ──────────────────────────────────────────────────────────

@@ -21,8 +21,8 @@
     <!-- Single wall: drag ends to lengthen/re-angle, side handle to thicken -->
     <g v-if="wallHandles" class="wall-handles">
       <line class="guide" :x1="wallHandles.mid.x" :y1="-wallHandles.mid.z" :x2="wallHandles.thick.x" :y2="-wallHandles.thick.z" pointer-events="none" />
-      <circle class="end" :cx="wallHandles.a.x" :cy="-wallHandles.a.z" :r="6 * px" data-handle="wall-a" />
-      <circle class="end" :cx="wallHandles.b.x" :cy="-wallHandles.b.z" :r="6 * px" data-handle="wall-b" />
+      <circle :class="['end', { linked: wallHandles.linkedA, detached: wallHandles.detachedA }]" :cx="wallHandles.a.x" :cy="-wallHandles.a.z" :r="6 * px" data-handle="wall-a" />
+      <circle :class="['end', { linked: wallHandles.linkedB, detached: wallHandles.detachedB }]" :cx="wallHandles.b.x" :cy="-wallHandles.b.z" :r="6 * px" data-handle="wall-b" />
       <rect
         class="thick"
         :x="wallHandles.thick.x - 5 * px"
@@ -67,7 +67,7 @@ import { computed, defineComponent, PropType } from 'vue'
 import { scene } from '../scene/store'
 import { editor } from './editor'
 import { add, dist, pointOnWall, scale, wallDir, wallNormal } from './geometry'
-import { getEntity, selectionBounds } from './ops'
+import { cornerLinks, getEntity, selectionBounds } from './ops'
 
 export default defineComponent({
   name: 'OverlayLayer',
@@ -108,7 +108,11 @@ export default defineComponent({
       const d = wallDir(w)
       const mid = { x: (w.a.x + w.b.x) / 2, z: (w.a.z + w.b.z) / 2 }
       const thick = add(mid, scale(n, w.thickness / 2 + 16 * props.px))
-      return { a: w.a, b: w.b, mid, thick, angle: (-Math.atan2(d.z, d.x) * 180) / Math.PI }
+      const linked = (end: 'a' | 'b') => { const l = cornerLinks(w, end); return !w.detached?.[end] && l.walls + l.rooms > 0 }
+      return {
+        a: w.a, b: w.b, mid, thick, angle: (-Math.atan2(d.z, d.x) * 180) / Math.PI,
+        linkedA: linked('a'), linkedB: linked('b'), detachedA: !!w.detached?.a, detachedB: !!w.detached?.b
+      }
     })
 
     const preview = computed(() => {
@@ -148,6 +152,8 @@ export default defineComponent({
 .rotate { fill: var(--accent); cursor: grab; }
 .scale { fill: #15161a; stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .wall-handles .end { fill: #15161a; stroke: var(--accent); stroke-width: 2px; vector-effect: non-scaling-stroke; cursor: move; }
+.wall-handles .end.linked { fill: var(--accent); }
+.wall-handles .end.detached { stroke-dasharray: 3 2; }
 .wall-handles .thick { fill: var(--accent); cursor: ns-resize; }
 .wall-handles .guide { stroke: var(--accent); stroke-width: 1px; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
 .draft { fill: rgba(255, 181, 71, 0.08); stroke: var(--accent); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
