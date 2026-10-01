@@ -1,4 +1,4 @@
-import { Pt, Wall } from '../scene/types'
+import { Opening, Pt, Wall } from '../scene/types'
 
 // Plan-space geometry (metres, x/z). Tolerances are in metres.
 export const EPS = 0.005
@@ -179,6 +179,47 @@ export function uncoveredParts(a: Pt, b: Pt, walls: Wall[]): Array<[Pt, Pt]> {
   })
   if (L - cursor > 0.05) parts.push([add(a, scale(d, cursor)), b])
   return parts.map(([p, q]) => [roundPt(p), roundPt(q)])
+}
+
+// ── Openings through overlapping walls ───────────────────────────────────────
+export interface WallCut {
+  offset: number // centre, along this wall from a
+  width: number
+  sill: number
+  height: number
+  openingId: string
+  own: boolean // false: cut through from an opening hosted by an overlapping wall
+}
+
+// Where a wall is cut by openings: its own, plus any opening on another wall that runs parallel
+// and overlaps or touches it (doubled walls, rooms pushed against each other), so a door, window
+// or doorway always goes through every layer of wall at that spot.
+export function wallCuts(w: Wall, walls: Wall[], openings: Opening[]): WallCut[] {
+  const L = wallLength(w)
+  const d = wallDir(w)
+  const n = wallNormal(w)
+  const byId = new Map(walls.map(x => [x.id, x]))
+  const cuts: WallCut[] = []
+  openings.forEach(o => {
+    if (o.wallId === w.id) {
+      cuts.push({ offset: o.offset, width: o.width, sill: o.sill, height: o.height, openingId: o.id, own: true })
+      return
+    }
+    const host = byId.get(o.wallId)
+    if (!host) return
+    const hd = wallDir(host)
+    // Parallel within ~3°.
+    if (Math.abs(d.x * hd.z - d.z * hd.x) > 0.05) return
+    const centre = add(host.a, scale(hd, o.offset))
+    const rel = sub(centre, w.a)
+    if (Math.abs(dot(rel, n)) > (host.thickness + w.thickness) / 2 + 0.15) return
+    const along = dot(rel, d)
+    const s = Math.max(along - o.width / 2, 0)
+    const e = Math.min(along + o.width / 2, L)
+    if (e - s < 0.05) return
+    cuts.push({ offset: (s + e) / 2, width: e - s, sill: o.sill, height: o.height, openingId: o.id, own: false })
+  })
+  return cuts.sort((p, q) => p.offset - q.offset)
 }
 
 export interface Bounds {

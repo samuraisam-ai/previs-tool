@@ -42,7 +42,7 @@ import { scene } from '../scene/store'
 import { Opening, Pt, Wall } from '../scene/types'
 import { isSelected } from './editor'
 import {
-  add, pointInPolygon, polygonArea, polygonCentroid, same, scale, wallDir, wallLength, wallNormal
+  add, pointInPolygon, polygonArea, polygonCentroid, same, scale, wallCuts, wallDir, wallLength, wallNormal
 } from './geometry'
 
 const svgPts = (pts: Pt[]) => pts.map(p => `${p.x},${-p.z}`).join(' ')
@@ -50,7 +50,7 @@ const svgPts = (pts: Pt[]) => pts.map(p => `${p.x},${-p.z}`).join(' ')
 // Solid x-ranges of a wall once its openings are cut out (x measured from wall.a).
 function solidRanges(w: Wall, extA: number, extB: number): Array<[number, number]> {
   const L = wallLength(w)
-  const cuts = scene.openings.filter(o => o.wallId === w.id).map(o => [o.offset - o.width / 2, o.offset + o.width / 2]).sort((a, b) => a[0] - b[0])
+  const cuts = wallCuts(w, scene.walls, scene.openings).map(c => [c.offset - c.width / 2, c.offset + c.width / 2])
   const out: Array<[number, number]> = []
   let cursor = -extA
   cuts.forEach(([s, e]) => {

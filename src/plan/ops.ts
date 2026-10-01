@@ -4,7 +4,7 @@ import { editor, setSelection } from './editor'
 import { commit } from './history'
 import {
   add, Bounds, boundsOf, dist, pointInPolygon, pointOnWall, projectOnWall, rotatePt, round3, roundPt, same,
-  scalePt, sub, uncoveredParts, wallLength
+  scalePt, sub, uncoveredParts, wallCuts, wallLength
 } from './geometry'
 
 // Everything the Floor Plan can do to the scene document: add, delete, move, rotate, scale,
@@ -90,8 +90,9 @@ export function openingDefaults(kind: OpeningKind) {
 export function openingFits(wall: Wall, offset: number, width: number, ignoreId?: string): boolean {
   const L = wallLength(wall)
   if (offset - width / 2 < 0.02 || offset + width / 2 > L - 0.02) return false
-  return !scene.openings.some(o => o.wallId === wall.id && o.id !== ignoreId &&
-    Math.abs(o.offset - offset) < (o.width + width) / 2 + 0.02)
+  // Includes openings cut through from overlapping walls.
+  return !wallCuts(wall, scene.walls, scene.openings).some(c => c.openingId !== ignoreId &&
+    Math.abs(c.offset - offset) < (c.width + width) / 2 + 0.02)
 }
 
 export function clampOffset(wall: Wall, offset: number, width: number): number {

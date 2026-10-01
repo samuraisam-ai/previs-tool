@@ -4,7 +4,7 @@ import { OpeningKind, Pt } from '../scene/types'
 
 // UI state of the Floor Plan editor (not part of the scene document, not undoable).
 
-export type Tool = 'select' | 'wall' | 'room' | 'door' | 'window' | 'opening' | 'measure'
+export type Tool = 'select' | 'pan' | 'wall' | 'room' | 'door' | 'window' | 'opening' | 'measure'
 
 export const OPENING_TOOLS: Record<string, OpeningKind> = { door: 'door', window: 'window', opening: 'opening' }
 

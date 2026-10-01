@@ -1,8 +1,13 @@
 <template>
   <div ref="bar" :class="['plan-toolbar', { compact }]">
-    <button :class="['tb', { on: tool === 'select' }]" title="Select (V)" @click="$emit('tool', 'select')">
-      <svg viewBox="0 0 24 24"><path :d="ICONS.select" /></svg><span>Select</span>
-    </button>
+    <div class="segmented" role="radiogroup" aria-label="Pointer or hand">
+      <button role="radio" :aria-checked="tool === 'select'" :class="['tb', 'icon', { on: tool === 'select' }]" title="Pointer: select and move (V)" @click="$emit('tool', 'select')">
+        <svg viewBox="0 0 24 24"><path :d="ICONS.select" /></svg>
+      </button>
+      <button role="radio" :aria-checked="tool === 'pan'" :class="['tb', 'icon', { on: tool === 'pan' }]" title="Hand: drag to move the map (H)" @click="$emit('tool', 'pan')">
+        <svg viewBox="0 0 24 24"><path :d="ICONS.hand" /></svg>
+      </button>
+    </div>
 
     <div ref="menuRoot" class="menu-root">
       <button :class="['tb', 'elements', { on: open || placing }]" :aria-expanded="open" aria-haspopup="menu" title="Add room elements, subjects, lights and cameras" @click="toggle">
@@ -54,6 +59,7 @@ import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref } 
 const ICONS: Record<string, string> = {
   select: 'M5 3l13 8-6 1.5L9.5 19z',
   plus: 'M12 5v14M5 12h14',
+  hand: 'M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6.5 7-3 0-4.6-1.6-6-4l-2-3.6a1.4 1.4 0 0 1 2.3-1.6L8 15',
   measure: 'M3 16l13-13 5 5-13 13zM7 12l2 2M10 9l2 2M13 6l2 2',
   room: 'M4 4h16v16H4z',
   wall: 'M3 10h18v4H3z',
@@ -116,7 +122,7 @@ export default defineComponent({
     const menuRoot = ref<HTMLDivElement | null>(null)
     const compact = ref(false)
 
-    const placing = computed(() => props.tool !== 'select')
+    const placing = computed(() => props.tool !== 'select' && props.tool !== 'pan')
     const placingLabel = computed(() => LABELS[props.tool] ?? '')
 
     const focusItem = (index: number) => {
@@ -196,6 +202,8 @@ export default defineComponent({
 .tb:hover { background: #2c2f37; }
 .tb.on { background: var(--accent); color: #1a1a1a; }
 .tb.icon { padding: 5px 7px; }
+.segmented { display: flex; gap: 1px; padding: 1px; background: #121317; border: 1px solid var(--line); border-radius: 7px; }
+.segmented .tb { border-radius: 5px; }
 .sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
 .tb.capture { color: var(--accent); }
 .tb.capture:hover { background: rgba(255, 181, 71, 0.12); }

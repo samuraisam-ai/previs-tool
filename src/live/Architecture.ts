@@ -6,7 +6,7 @@ import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { Scene } from '@babylonjs/core/scene'
-import { same, triangulate, wallLength } from '../plan/geometry'
+import { same, triangulate, wallCuts, wallLength } from '../plan/geometry'
 import { FloorFinish, Opening, SceneDoc, Wall } from '../scene/types'
 
 // Builds the 3D architecture (walls with openings, doors, windows, floors, ceilings) from the plan.
@@ -143,10 +143,11 @@ export class Architecture {
     const extA = connected(w.a) ? t / 2 : 0
     const extB = connected(w.b) ? t / 2 : 0
 
-    const openings = doc.openings.filter(o => o.wallId === w.id).sort((p, q) => p.offset - q.offset)
+    // Own openings plus openings on overlapping walls, so a door cuts through every layer.
+    const cuts = wallCuts(w, doc.walls, doc.openings)
     const pieces: Piece[] = []
     let cursor = -extA
-    openings.forEach(o => {
+    cuts.forEach(o => {
       const x0 = Math.max(o.offset - o.width / 2, 0)
       const x1 = Math.min(o.offset + o.width / 2, L)
       if (x0 > cursor + 0.001) pieces.push({ x0: cursor, x1: x0, y0: 0, y1: H })
@@ -154,7 +155,8 @@ export class Architecture {
       if (top < H - 0.001) pieces.push({ x0, x1, y0: top, y1: H })
       if (o.sill > 0.001) pieces.push({ x0, x1, y0: 0, y1: Math.min(o.sill, H) })
       cursor = Math.max(cursor, x1)
-      this.buildOpening(o, t, node)
+      const own = o.own && doc.openings.find(x => x.id === o.openingId)
+      if (own) this.buildOpening(own, t, node)
     })
     if (L + extB > cursor + 0.001) pieces.push({ x0: cursor, x1: L + extB, y0: 0, y1: H })
 

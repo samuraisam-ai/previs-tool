@@ -43,7 +43,7 @@
         <p class="readout">
           Select to move; Shift-click or drag a box to select several. Use the box handles to rotate and scale,
           arrow keys to nudge (Shift ×10), ⌘D duplicate, ⌘C/⌘V copy/paste, Delete to remove, ⌘Z undo.
-          Scroll to zoom, right-drag or Space-drag to pan.
+          Scroll to zoom. <b>H</b> (hand) drags the map; right-drag or Space-drag pans from any tool; <b>V</b> back to the pointer.
           <b>C</b> captures the setup (plan + light and camera legend) into a production.
         </p>
         <h4 class="section">Snapping</h4>
@@ -102,9 +102,10 @@ type Gesture =
   | { type: 'room'; a: Pt }
   | { type: 'measure' }
 
-const KEY_TOOLS: Record<string, Tool> = { v: 'select', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
+const KEY_TOOLS: Record<string, Tool> = { v: 'select', h: 'pan', r: 'room', w: 'wall', d: 'door', n: 'window', o: 'opening', m: 'measure' }
 const HINTS: Record<Tool, string> = {
   select: 'Click to select · drag to move · Shift-click / drag a box for several · handles rotate & scale · Alt = no snapping',
+  pan: 'Hand: drag anywhere to move the map · scroll to zoom · V for the pointer',
   room: 'Drag a rectangle to create a room (walls + floor). Rooms drawn against each other share a wall.',
   wall: 'Click to place a 3 m wall, then drag its round ends to lengthen/turn it and the square handle to thicken it.',
   door: 'Hover a wall and click to add a door. Double-click a door to open/close it.',
@@ -279,7 +280,7 @@ export default defineComponent({
       const el = svg.value as SVGSVGElement
       el.setPointerCapture(event.pointerId)
       const p = toWorld(event)
-      if (event.button === 1 || event.button === 2 || spaceHeld) {
+      if (event.button === 1 || event.button === 2 || spaceHeld || editor.tool === 'pan') {
         gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz }
         panning.value = true
         return
@@ -619,6 +620,7 @@ export default defineComponent({
 .canvas.tool-select { cursor: default; }
 .canvas.tool-wall, .canvas.tool-room, .canvas.tool-measure { cursor: crosshair; }
 .canvas.tool-door, .canvas.tool-window, .canvas.tool-opening { cursor: copy; }
+.canvas.tool-pan { cursor: grab; }
 .canvas.panning { cursor: grabbing; }
 .grid line { stroke: #22242b; stroke-width: 1px; vector-effect: non-scaling-stroke; }
 .grid line.major { stroke: #2f323b; }

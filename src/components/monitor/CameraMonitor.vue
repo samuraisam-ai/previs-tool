@@ -74,6 +74,12 @@
         <template v-else-if="selected === 'tilt'">
           <TiltWheel v-model="p.tilt" icon="camera" label="Camera tilt" />
         </template>
+        <template v-else-if="selected === 'pan'">
+          <AngleWheel :model-value="heading" :snap="5" :size="120" label="Camera pan" @update:model-value="setHeading" />
+          <div class="pop-side">
+            <div class="hint">Drag to pan (Shift = free) · arrows / scroll: 1° · Shift: 5°</div>
+          </div>
+        </template>
         <template v-else>
           <div class="scrollers">
             <div v-if="selected === 'shutter'" class="modes">
@@ -146,6 +152,7 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, PropType, ref, watch } from 'vue'
 import RingDial from '../controls/RingDial.vue'
+import AngleWheel from '../controls/AngleWheel.vue'
 import TiltWheel from '../controls/TiltWheel.vue'
 import ScopeDock from './ScopeDock.vue'
 import { getBody } from '../../library/cameras'
@@ -156,7 +163,7 @@ import { FrameCapture } from '../../live/LiveScene'
 import { getItem, scene, sceneBounce } from '../../scene/store'
 import { CameraItem, FrameLines, ScopeId, SubjectItem } from '../../scene/types'
 
-type ParamId = 'shutter' | 'iris' | 'iso' | 'nd' | 'pol' | 'wb' | 'tint' | 'lens' | 'focus' | 'tilt'
+type ParamId = 'shutter' | 'iris' | 'iso' | 'nd' | 'pol' | 'wb' | 'tint' | 'lens' | 'focus' | 'pan' | 'tilt'
 
 const FRAME_ASPECT: Record<Exclude<FrameLines, 'off'>, number> = {
   '2.39': 2.39, '2.00': 2, '1.85': 1.85, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16, '4:5': 4 / 5
@@ -164,7 +171,7 @@ const FRAME_ASPECT: Record<Exclude<FrameLines, 'off'>, number> = {
 
 export default defineComponent({
   name: 'CameraMonitor',
-  components: { RingDial, TiltWheel, ScopeDock },
+  components: { RingDial, AngleWheel, TiltWheel, ScopeDock },
   props: {
     cameraId: { type: String, required: true },
     rect: { type: Object as PropType<{ x: number; y: number; width: number; height: number }>, required: true },
@@ -199,6 +206,12 @@ export default defineComponent({
     const nearestIndex = (list: number[], v: number) => list.reduce((best, x, i) => (Math.abs(x - v) < Math.abs(list[best] - v) ? i : best), 0)
     const stepList = (list: number[], v: number, dir: number) => list[Math.min(list.length - 1, Math.max(0, nearestIndex(list, v) + dir))]
 
+    // Pan = the camera's heading on the plan (0–359°, clockwise); edits the same item the plan shows.
+    const heading = computed(() => (cam.value ? Math.round(((cam.value.rotationY % 360) + 360) % 360) : 0))
+    const setHeading = (deg: number) => {
+      if (cam.value) cam.value.rotationY = ((Math.round(deg) % 360) + 360) % 360
+    }
+
     const stepParam = (id: ParamId, dir: number, alt = false) => {
       const c = p.value
       switch (id) {
@@ -223,6 +236,7 @@ export default defineComponent({
         case 'pol': c.polarizer.angle = Math.min(180, Math.max(0, c.polarizer.angle + dir * (alt ? 1 : 5))); break
         case 'focus': setManualFocus(focusM.value * Math.pow(alt ? 1.01 : 1.05, dir)); break
         case 'tilt': c.tilt = Math.min(90, Math.max(-90, c.tilt + dir * (alt ? 5 : 1))); break
+        case 'pan': setHeading(heading.value + dir * (alt ? 5 : 1)); break
       }
     }
 
@@ -323,6 +337,7 @@ export default defineComponent({
         { id: 'wb' as ParamId, label: 'WB', value: `${c.wb}K ${c.tint === 0 ? '' : c.tint < 0 ? `G${-c.tint}` : `M${c.tint}`}` },
         { id: 'lens' as ParamId, label: 'LENS', value: `${lens.value.focalLength}mm` },
         { id: 'focus' as ParamId, label: c.focus.mode === 'subject' ? 'AF' : 'MF', value: formatDistance(focusM.value) },
+        { id: 'pan' as ParamId, label: 'PAN', value: `${heading.value}°` },
         { id: 'tilt' as ParamId, label: 'TILT', value: c.tilt === 0 ? 'LEVEL' : `${Math.abs(c.tilt)}° ${c.tilt > 0 ? '↓' : '↑'}` }
       ]
     })
@@ -409,7 +424,7 @@ export default defineComponent({
       cam, p, d, body, lens, rate, profile, subjects, focusM, dof, selected, menuOpen, select, stepParam,
       neighbours, dragStart, dragMove, dragEnd, clampIris, clampIso, clampShutter, setShutterMode,
       setManualFocus, track, toggleScope, mm, mmText, mmClass, cells, frame, gridLines, toggleRec, timecode,
-      onImageWheel, rectStyle, formatDistance, lenses: LENSES,
+      onImageWheel, rectStyle, formatDistance, lenses: LENSES, heading, setHeading,
       frameLineOptions: ['off', '2.39', '2.00', '1.85', '4:3', '1:1', '9:16', '4:5'],
       scopeOptions: [
         { id: 'histogram', label: 'Histogram' }, { id: 'waveform', label: 'Waveform (RGB overlay)' },
