@@ -24,7 +24,7 @@ import { headingDirection, illuminanceAt, ResolvedLight, resolveLight, subjectMe
 import { CameraItem, CameraProps, LightItem, SceneDoc, SceneItem, SubjectItem } from '../scene/types'
 import { Architecture, LAYER } from './Architecture'
 import { sceneBounce } from '../scene/store'
-import { worldLux } from '../scene/world'
+import { bounceLux, worldLux } from '../scene/world'
 import { ownerColour } from '../plan/marks'
 import { TapeMarks } from './TapeMarks'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
@@ -480,16 +480,17 @@ export class LiveScene {
     if (this.viewingId && !this.entries.has(this.viewingId)) this.viewThrough(null)
 
     if (lightsChanged || subjectsChanged || this.slots.size === 0) this.assignLights(doc)
-    // Ambient = estimated room bounce (tinted by the lights) + light from outside (time of day,
-    // its own colour temperature). Blackout removes the outside part only.
+    // Ambient = estimated room bounce (tinted by the lights, scaled by the Bounce control) + light
+    // from outside (time of day, its own colour temperature). Blackout removes both: direct light only.
     const worldKey = JSON.stringify(doc.world)
     if (lightsChanged || rebuilt || worldKey !== this.worldKey) {
       this.worldKey = worldKey
       const bounce = sceneBounce(doc)
+      const fill = bounceLux(doc.world, bounce.lux)
       const outside = worldLux(doc.world)
       const sky = lightColour('cct', doc.world.kelvin, 0, 0, 0)
-      const total = bounce.lux + outside
-      const mix = (i: number) => (total > 0 ? (bounce.colour[i] * bounce.lux + sky[i] * outside) / total : 1)
+      const total = fill + outside
+      const mix = (i: number) => (total > 0 ? (bounce.colour[i] * fill + sky[i] * outside) / total : 1)
       this.ambient.intensity = total
       this.ambient.diffuse = new Color3(mix(0), mix(1), mix(2))
       this.ambient.groundColor = this.ambient.diffuse.scale(0.8)

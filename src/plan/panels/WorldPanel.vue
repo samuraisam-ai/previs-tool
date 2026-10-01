@@ -4,7 +4,7 @@
     <label class="switch" :class="{ on: w.blackout }">
       <input type="checkbox" :checked="w.blackout" @change="w.blackout = !w.blackout" />
       <span class="track"><span class="thumb"></span></span>
-      Blackout <small>only your fixtures light the scene</small>
+      Blackout <small>direct light only: no outside light, no bounce</small>
     </label>
 
     <div :class="['presets', { dim: w.blackout }]" role="radiogroup" aria-label="Time of day">
@@ -38,16 +38,31 @@
         <button v-if="w.kelvin !== WORLD_PRESETS[w.preset].kelvin" class="link" @click="w.kelvin = WORLD_PRESETS[w.preset].kelvin">Reset to {{ WORLD_PRESETS[w.preset].kelvin }} K</button>
       </div>
     </label>
-    <p class="readout">{{ summary }}<br /><span class="note">{{ WORLD_PRESETS[w.preset].note }}</span></p>
+    <label :class="{ dim: w.blackout }">Room bounce
+      <div class="amount">
+        <input type="range" min="0" max="150" step="1" :value="w.bounce ?? 100" :disabled="w.blackout" @input="setBounce" />
+        <input type="number" min="0" max="150" step="5" :value="Math.round(w.bounce ?? 100)" :disabled="w.blackout" @change="setBounce" />
+        <span>%</span>
+      </div>
+    </label>
+    <div class="marks"><span>0</span><span>Light from your fixtures reflecting off walls and floor</span><span>150</span></div>
+
+    <div class="split">
+      <div><span>Outside</span><b>{{ formatLux(outside) }}</b></div>
+      <div><span>Bounce</span><b>{{ formatLux(fill) }}</b></div>
+      <div><span>Total fill</span><b>{{ formatLux(outside + fill) }}</b></div>
+    </div>
+    <p class="readout">{{ summary }}<br /><span class="note">{{ WORLD_PRESETS[w.preset].note }}</span><br />
+      <span class="note">An even fill, not sun through the windows — real directional daylight is a later feature.</span></p>
   </div>
 </template>
 
 <script lang="ts">
 import { computed, defineComponent } from 'vue'
 import { kelvinToSrgb } from '../../library/colour'
-import { scene } from '../../scene/store'
+import { scene, sceneBounce } from '../../scene/store'
 import { WorldPreset } from '../../scene/types'
-import { WORLD_ORDER, WORLD_PRESETS, worldSummary } from '../../scene/world'
+import { bounceLux, formatLux, WORLD_ORDER, WORLD_PRESETS, worldLux, worldSummary } from '../../scene/world'
 
 export default defineComponent({
   name: 'WorldPanel',
@@ -61,8 +76,12 @@ export default defineComponent({
     const value = (e: Event) => Number((e.target as HTMLInputElement).value)
     const setPercent = (e: Event) => { const v = value(e); if (isFinite(v)) scene.world.percent = Math.min(200, Math.max(0, v)) }
     const setKelvin = (e: Event) => { const v = value(e); if (isFinite(v)) scene.world.kelvin = Math.round(Math.min(12000, Math.max(1800, v))) }
+    const setBounce = (e: Event) => { const v = value(e); if (isFinite(v)) scene.world.bounce = Math.min(150, Math.max(0, v)) }
+    const estimated = computed(() => sceneBounce(scene).lux)
+    const fill = computed(() => bounceLux(scene.world, estimated.value))
+    const outside = computed(() => worldLux(scene.world))
     const swatch = (k: number) => `rgb(${kelvinToSrgb(k).map(c => Math.round(Math.min(1, c) * 255)).join(',')})`
-    return { w, summary, pick, setPercent, setKelvin, swatch, WORLD_ORDER, WORLD_PRESETS }
+    return { w, summary, pick, setPercent, setKelvin, setBounce, fill, outside, formatLux, swatch, WORLD_ORDER, WORLD_PRESETS }
   }
 })
 </script>
@@ -89,4 +108,8 @@ export default defineComponent({
 .marks { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: -4px; }
 .link { border: none; background: none; padding: 0; font-size: 11px; color: var(--accent); text-decoration: underline; }
 .note { color: var(--muted); font-size: 11px; }
+.split { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.split div { display: flex; flex-direction: column; align-items: center; padding: 5px 2px; border: 1px solid var(--line); border-radius: 6px; }
+.split span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.split b { font-size: 13px; font-weight: 600; }
 </style>

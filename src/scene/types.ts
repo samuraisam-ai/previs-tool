@@ -149,7 +149,8 @@ export interface WorldLight {
   preset: WorldPreset
   percent: number // 0–200 % of the preset's level
   kelvin: number
-  blackout: boolean // ambient off (fixtures only); `percent` is kept for when it's turned back on
+  blackout: boolean // direct light only: no outside light and no bounce fill (amounts are kept)
+  bounce: number // 0–150 % of the estimated light reflected off the room by your fixtures
 }
 
 export interface LineOfAction {
