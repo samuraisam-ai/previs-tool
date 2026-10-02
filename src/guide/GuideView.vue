@@ -25,12 +25,13 @@
           <li>Open <b>Setups</b> and pick <b>Sample – 1-bedroom apartment</b> (or the 3-bedroom house).</li>
           <li>Open a setup and click <b>Open in Floor Plan</b>. The furnished set loads with its cast, cameras and lamps.</li>
           <li>Switch to <b>Live View</b> and choose a camera in <b>View</b> to see the shot.</li>
+          <li>Press <b>◉ FRAME</b> to capture it, then find it on the scene's <b>Storyboard</b> tab in Setups.</li>
         </ol>
         <p class="note">The samples are yours to change. Undo with ⌘Z / Ctrl+Z. If you delete them, <b>Restore samples</b> in Setups brings them back.</p>
       </section>
 
       <section class="space">
-        <h2>The three spaces</h2>
+        <h2>How it works</h2>
 
         <h3>1 · Floor Plan: build and block the set</h3>
         <figure><img src="/guide/plan.jpg" alt="Floor Plan with the 3-bedroom sample" /></figure>
@@ -67,7 +68,16 @@
         <ul>
           <li><b>Capture</b> (C in Floor Plan, or FRAME in Live View) saves the plan or the camera frame into a production → scene.</li>
           <li>Every capture remembers the whole set: <b>Open in Floor Plan</b> takes you straight back to it.</li>
-          <li>Frames build the <b>Storyboard</b>, which you can print. <b>Export</b> shares a whole production as one file and <b>Import</b> opens it on another computer.</li>
+          <li><b>Export</b> shares a whole production as one file and <b>Import</b> opens it on another computer.</li>
+        </ul>
+
+        <h3>4 · Storyboard: plan the cut</h3>
+        <figure class="tall"><img src="/guide/storyboard.jpg" alt="A storyboard page with four frames" /></figure>
+        <ul>
+          <li><b>Capture frames</b> in Live View with <b>◉ FRAME</b> (or C) while looking through a camera. You get a clean, graded still with the lens, T-stop and camera height filled in for you.</li>
+          <li>Give each frame a <b>shot size</b> (WS, MS, CU…), <b>movement</b>, <b>action</b> and <b>dialogue</b>, in the save dialog or later on the board.</li>
+          <li>The <b>Storyboard</b> tab lays frames out on 6-panel pages. Drag from the frame strip, drag panels to swap them, or use <b>Auto-fill in order</b>. A new page appears when you need one.</li>
+          <li><b>Print / PDF</b> gives the crew a clean shot-by-shot board. Double-click a frame to open it, and <b>Open in Floor Plan</b> to go back to that exact set-up.</li>
         </ul>
       </section>
 
@@ -147,6 +157,7 @@ figure img { display: block; width: 100%; border-radius: 8px; border: 1px solid 
   h3 { margin-top: 10px; font-size: 11.5pt; }
   figure { margin: 6px 0; break-inside: avoid; }
   figure img { border-color: #ccc; max-height: 7.2cm; object-fit: cover; object-position: top; }
+  figure.tall img { max-height: 10cm; }
   .pair { gap: 8px; }
   .keys td { border-color: #ddd; padding: 3px 6px; }
   section { break-inside: auto; }
