@@ -2,7 +2,8 @@ import { loadScene } from '../plan/history'
 import { openingDefaults } from '../plan/ops'
 import { projectOnWall, uncoveredParts, wallLength } from '../plan/geometry'
 import { cameraPropsFor, makeRoom, makeWall, newId, scene } from '../scene/store'
-import { CameraItem, Finish, Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, SubjectItem, Wall } from '../scene/types'
+import { defaultSubjectProps } from '../subjects/kinematics'
+import { CameraItem, Finish, Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, SubjectItem, SubjectProps, Wall } from '../scene/types'
 import { defaultWorld } from '../scene/world'
 import { getDef } from './catalog'
 import { defaultPropProps } from './create'
@@ -30,7 +31,7 @@ interface RoomSpec { name: string; r: Rect; floor: FinishSpec; walls?: FinishSpe
 // [kind, x, z, width?, sill?] — openings are found on whichever wall runs through the point.
 type OpeningSpec = [OpeningKind, number, number, number?, number?]
 interface P { id: string; x: number; z: number; r?: number; o?: { [k: string]: OptionValue }; s?: { w?: number; d?: number; h?: number }; f?: { [slot: string]: Partial<Finish> }; name?: string; e?: number; light?: boolean }
-interface CastSpec { name: string; x: number; z: number; r: number; height: number }
+interface CastSpec { name: string; x: number; z: number; r: number; height: number; props?: Partial<SubjectProps> }
 interface CamSpec { name: string; x: number; z: number; r: number; height: number; lens: string; subject: number }
 export interface HouseSpec { rooms: RoomSpec[]; openings: OpeningSpec[]; props: P[]; cast: CastSpec[]; cameras: CamSpec[] }
 
@@ -370,7 +371,7 @@ function houseDoc(spec: HouseSpec): { doc: object; built: Array<PropItem | null>
   })
   const built = spec.props.map(prop)
   const props = built.filter((p): p is PropItem => !!p)
-  const cast: SubjectItem[] = spec.cast.map(c => ({ id: newId('subject'), kind: 'subject', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height }))
+  const cast: SubjectItem[] = spec.cast.map((c, i) => ({ id: newId('subject'), kind: 'subject', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height, props: { ...defaultSubjectProps(i), ...c.props } }))
   const cams: CameraItem[] = spec.cameras.map(c => {
     const cam: CameraItem = { id: newId('camera'), kind: 'camera', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height, props: cameraPropsFor(cast[c.subject]?.id ?? null) }
     cam.props.lensId = c.lens

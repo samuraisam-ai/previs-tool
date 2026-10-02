@@ -28,6 +28,8 @@ import { bounceLux, worldLux } from '../scene/world'
 import { ownerColour } from '../plan/marks'
 import { TapeMarks } from './TapeMarks'
 import { Glow, PropsLayer } from './PropsLayer'
+import { FigureMaterials, Mannequin } from './Mannequin'
+import { solveSubject, subjectProps } from '../subjects/kinematics'
 import { storage } from '../setups/storage'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 import { LightPool, LightRequest, Slot } from './LightPool'
@@ -53,6 +55,7 @@ interface Entry {
   emitterArea?: number
   stand?: Mesh
   casters?: AbstractMesh[]
+  figure?: Mannequin
   viewCamera?: UniversalCamera
   pipeline?: CameraPipeline
 }
@@ -101,7 +104,7 @@ export class LiveScene {
   private cutaway = true
   private viewingId: string | null = null
   private imageRect = { x: 0, y: 0, width: 1, height: 1 }
-  private subjectMaterial: PBRMaterial
+  private figureMaterials: FigureMaterials
   private markerMaterial: PBRMaterial
   private resizeObserver: ResizeObserver
   private display: DisplaySettings = { exposure: 1, wbGains: [1, 1, 1] }
@@ -176,8 +179,8 @@ export class LiveScene {
     // Walls, floors and ceilings use the same finish materials as props.
     this.architecture.setFinishMaterials(this.propsLayer.materials)
     this.applyLayers()
-    // Slightly glossy skin gives the polarizer something to cut (floors have per-finish sheen).
-    this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
+    // People: shared materials per colour (slightly glossy skin gives the polarizer something to cut).
+    this.figureMaterials = new FigureMaterials((name, colour, roughness) => this.createSurface(name, colour, roughness))
     this.markerMaterial = this.createSurface('marker', new Color3(0.04, 0.04, 0.045), 0.6)
 
     this.pool = new LightPool(this.scene)
@@ -491,7 +494,7 @@ export class LiveScene {
     const pol = settings?.polarizer.fitted ? Math.cos(settings.polarizer.angle * DEG) ** 2 : 1
     const specular = settings?.polarizer.fitted ? 0.15 + 0.85 * pol : 1
     let specularChanged = false
-    ;[this.subjectMaterial, ...this.architecture.polarizable].forEach(m => {
+    ;[...this.figureMaterials.all(), ...this.architecture.polarizable].forEach(m => {
       if (m.specularIntensity !== specular) { m.specularIntensity = specular; specularChanged = true }
     })
 
@@ -517,7 +520,10 @@ export class LiveScene {
         this.removeEntry(item.id)
         entry = undefined
       }
-      const snapshot = JSON.stringify(item)
+      // A subject looking at someone re-poses when they move.
+      const lookAt = item.kind === 'subject' ? subjectProps(item).lookAt : null
+      const target = lookAt ? doc.items.find(i => i.id === lookAt) : undefined
+      const snapshot = JSON.stringify(item) + (target ? JSON.stringify([target.x, target.z, target.height, target.kind === 'subject' ? target.props : 0]) : '')
       if (!entry) {
         entry = this.createEntry(item, entryKey)
         this.entries.set(item.id, entry)
@@ -721,22 +727,15 @@ export class LiveScene {
     if (entry.pipeline && entry.viewCamera) entry.pipeline.dispose(entry.viewCamera)
     entry.viewCamera?.dispose()
     entry.emitterMaterial?.dispose()
+    entry.figure?.dispose()
     entry.root.dispose(false, false)
     this.entries.delete(id)
   }
 
-  // Stand-in mannequin: body + head + nose so you can see which way it faces.
+  // A posable mannequin (see Mannequin.ts and src/subjects/).
   private buildSubject(entry: Entry): void {
-    const body = MeshBuilder.CreateCapsule('body', { height: 1, radius: 0.2 }, this.scene)
-    const head = MeshBuilder.CreateSphere('head', { diameter: 0.24 }, this.scene)
-    const nose = MeshBuilder.CreateBox('nose', { width: 0.05, height: 0.05, depth: 0.08 }, this.scene)
-    const parts = [body, head, nose]
-    parts.forEach(mesh => {
-      mesh.material = this.subjectMaterial
-      mesh.receiveShadows = true
-      this.unpickable(mesh, entry.root)
-    })
-    entry.casters = parts
+    entry.figure = new Mannequin(this.scene, this.figureMaterials, entry.root)
+    entry.casters = entry.figure.meshes
   }
 
   private buildLight(entry: Entry, item: LightItem): void {
@@ -883,18 +882,15 @@ export class LiveScene {
   private updateEntry(entry: Entry, item: SceneItem, doc: SceneDoc): void {
     entry.root.position.set(item.x, 0, item.z)
     entry.root.rotation.y = item.rotationY * DEG
-    if (item.kind === 'subject') this.updateSubject(entry, item)
+    if (item.kind === 'subject') this.updateSubject(entry, item, doc)
     if (item.kind === 'light') this.updateLight(entry, item)
     if (item.kind === 'camera') this.updateCamera(entry, item, doc)
   }
 
-  private updateSubject(entry: Entry, item: SubjectItem): void {
-    const [body, head, nose] = entry.casters as Mesh[]
-    const bodyHeight = item.height - 0.26
-    body.scaling.y = bodyHeight
-    body.position.y = bodyHeight / 2
-    head.position.y = item.height - 0.12
-    nose.position.set(0, item.height - 0.12, 0.13)
+  private updateSubject(entry: Entry, item: SubjectItem, doc: SceneDoc): void {
+    const figure = entry.figure as Mannequin
+    figure.setColours(subjectProps(item))
+    figure.pose(solveSubject(item, doc.items))
   }
 
   private updateLight(entry: Entry, item: LightItem): void {

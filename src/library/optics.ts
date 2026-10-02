@@ -1,6 +1,7 @@
+import { faceOf } from '../subjects/kinematics'
 import { getBody } from './cameras'
 import { getLens } from './lenses'
-import { CameraItem, CameraProps, SceneDoc } from '../scene/types'
+import { CameraItem, CameraProps, SceneDoc, SubjectItem } from '../scene/types'
 
 const DEG = Math.PI / 180
 // Incident-meter calibration constant (lux): N² / t = E·S / C.
@@ -71,10 +72,11 @@ export function focusDistance(item: CameraItem, doc: SceneDoc): number {
   const { focus } = item.props
   const lens = getLens(item.props.lensId)
   if (focus.mode === 'subject') {
-    const subject = doc.items.find(i => i.id === focus.subjectId && i.kind === 'subject')
+    const subject = doc.items.find((i): i is SubjectItem => i.id === focus.subjectId && i.kind === 'subject')
     if (subject) {
       const dir = cameraDirection(item)
-      const v = [subject.x - item.x, subject.height - 0.12 - item.height, subject.z - item.z]
+      const face = faceOf(subject, doc.items)
+      const v = [face[0] - item.x, face[1] - item.height, face[2] - item.z]
       const along = v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2]
       return Math.max(along, lens.closeFocus)
     }

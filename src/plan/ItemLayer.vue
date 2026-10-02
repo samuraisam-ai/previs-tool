@@ -34,9 +34,16 @@
           <rect class="lens" x="-0.07" y="-0.2" width="0.14" height="0.1" />
         </template>
 
-        <template v-else>
-          <circle class="body" r="0.22" />
-          <path class="nose" d="M -0.08 -0.2 L 0 -0.32 L 0.08 -0.2 Z" pointer-events="none" />
+        <template v-else-if="figures[item.id]">
+          <!-- Top-down figure in its pose (from the same kinematics as the 3D mannequin). -->
+          <circle class="hit" :cx="figures[item.id].hit.x" :cy="figures[item.id].hit.y" :r="figures[item.id].hit.r" />
+          <g v-if="isSelected(item.id)" class="figure-outline">
+            <line v-for="(s, i) in figures[item.id].parts" :key="'o' + i" :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2" :stroke-width="s.w + 0.05" />
+            <circle :cx="figures[item.id].head.x" :cy="figures[item.id].head.y" :r="figures[item.id].head.r + 0.025" />
+          </g>
+          <line v-for="(s, i) in figures[item.id].parts" :key="i" class="limb" :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2" :stroke="s.c" :stroke-width="s.w" />
+          <circle class="head" :cx="figures[item.id].head.x" :cy="figures[item.id].head.y" :r="figures[item.id].head.r" :fill="figures[item.id].head.c" />
+          <path class="nose" :d="figures[item.id].nose" pointer-events="none" />
         </template>
 
         <!-- Aim handle for a single selected item -->
@@ -61,9 +68,11 @@ import { getLens } from '../library/lenses'
 import { dofLimits, focusDistance, horizontalFov } from '../library/optics'
 import { ResolvedLight, resolveLight } from '../library/photometry'
 import { scene } from '../scene/store'
-import { CameraItem, LightItem } from '../scene/types'
+import { CameraItem, LightItem, SubjectItem } from '../scene/types'
 import { editor, isSelected } from './editor'
 import { crossesLine } from './lineOfAction'
+import { segments, solveSubject, subjectProps } from '../subjects/kinematics'
+import { JointId } from '../subjects/skeleton'
 import { playback, posed } from './blocking'
 
 interface LightVisual {
@@ -155,6 +164,45 @@ export default defineComponent({
     // Drawn at their blocking pose while playback runs.
     // Props are drawn by PropLayer, underneath.
     const items = computed(() => scene.items.filter(i => i.kind !== 'prop').map(i => (playback.active ? posed(i) : i)))
+    // Plan figures: each body segment seen from above, lowest first so the head and shoulders
+    // draw over the legs. Colours follow the wardrobe.
+    const figures = computed(() => {
+      const out: Record<string, { parts: Array<{ x1: number; y1: number; x2: number; y2: number; w: number; c: string; z: number }>; head: { x: number; y: number; r: number; c: string }; nose: string; hit: { x: number; y: number; r: number } }> = {}
+      items.value.forEach(item => {
+        if (item.kind !== 'subject') return
+        const p = subjectProps(item as SubjectItem)
+        const posed = solveSubject(item as SubjectItem, scene.items)
+        const slot = (id: JointId) => (/^(hips|hip|knee)/.test(id) ? p.bottom : id.startsWith('ankle') ? p.shoes : /^(spine|chest|shoulder)/.test(id) ? p.top : p.skin)
+        const parts = segments(posed)
+          .filter(s => s.id !== 'head' && s.id !== 'neck')
+          .map(s => ({ x1: s.a[0], y1: -s.a[2], x2: s.b[0], y2: -s.b[2], w: s.r * 2, c: slot(s.id), z: (s.a[1] + s.b[1]) / 2 }))
+          .sort((a, b) => a.z - b.z)
+        // Shoulders as one bar across the chest.
+        const sl = posed.pos.shoulderL
+        const sr = posed.pos.shoulderR
+        parts.push({ x1: sl[0], y1: -sl[2], x2: sr[0], y2: -sr[2], w: 0.1 * posed.height / 1.75, c: p.top, z: sl[1] })
+        const h = posed.pos.head
+        const eye = posed.eye
+        const fx = eye[0] - h[0]
+        const fz = eye[2] - h[2]
+        const len = Math.hypot(fx, fz) || 1
+        const r = 0.1 * posed.height / 1.75
+        const hx = h[0] + fx * 0.3
+        const hy = -(h[2] + fz * 0.3)
+        // Nose: a small wedge on the side of the head the face points to.
+        const ux = fx / len
+        const uy = -fz / len
+        const tip = r + 0.07
+        const nose = `M ${hx + ux * r * 0.8 - uy * 0.06} ${hy + uy * r * 0.8 + ux * 0.06} L ${hx + ux * tip} ${hy + uy * tip} L ${hx + ux * r * 0.8 + uy * 0.06} ${hy + uy * r * 0.8 - ux * 0.06} Z`
+        const xs = parts.flatMap(q => [q.x1, q.x2])
+        const ys = parts.flatMap(q => [q.y1, q.y2])
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+        const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+        const hitR = Math.max(0.25, Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 2)
+        out[item.id] = { parts, head: { x: hx, y: hy, r, c: p.skin }, nose, hit: { x: cx, y: cy, r: hitR } }
+      })
+      return out
+    })
     const single = computed(() => (editor.selection.length === 1 ? editor.selection[0] : null))
     const cameraList = computed(() => scene.items.filter((item): item is CameraItem => item.kind === 'camera'))
     const lights = computed(() => scene.items.filter((item): item is LightItem => item.kind === 'light'))
@@ -199,7 +247,7 @@ export default defineComponent({
 
     // A lamp's bulb is part of the lamp on the plan: clicks go through to the lamp.
     const isPractical = (item: { kind: string; attachedTo?: string }) => item.kind === 'light' && !!item.attachedTo
-    return { items, single, camViews, visuals, wedge, isSelected, crossesLine, isPractical }
+    return { items, figures, single, camViews, visuals, wedge, isSelected, crossesLine, isPractical }
   }
 })
 </script>
@@ -210,8 +258,12 @@ export default defineComponent({
 .tilt-label { fill: var(--muted); }
 .item .body { stroke: #0d0e11; stroke-width: 0.02; }
 .item.selected .body { stroke: var(--accent); stroke-width: 0.04; }
-.subject .body { fill: #c89f82; }
-.subject .nose { fill: #c89f82; }
+.subject .hit { fill: transparent; }
+.subject .limb { stroke-linecap: round; opacity: 0.92; }
+.subject .head { stroke: rgba(15, 16, 19, 0.6); stroke-width: 0.012; }
+.subject .nose { fill: #e6e7ea; opacity: 0.85; }
+.figure-outline line { stroke: var(--accent); stroke-linecap: round; }
+.figure-outline circle { fill: var(--accent); }
 .light .beam { opacity: 0.12; stroke: none; }
 .light .beam.hard { opacity: 0.2; stroke-width: 0.02; stroke-opacity: 0.8; }
 .light .fixture .hit { fill: transparent; }

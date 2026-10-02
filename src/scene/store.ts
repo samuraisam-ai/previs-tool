@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { defaultSubjectProps } from '../subjects/kinematics'
 import { dist, pointInPolygon, polygonArea } from '../plan/geometry'
 import { getFixture } from '../library/fixtures'
 import { defaultModifier, getModifier, modifiersFor } from '../library/modifiers'
@@ -93,7 +94,7 @@ export const scene = reactive<SceneDoc>({
   openings: [],
   rooms: initialArchitecture.rooms,
   items: [
-    { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75 },
+    { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75, props: defaultSubjectProps(0) },
     {
       id: newId('light'), kind: 'light', name: 'Key', x: -1.5, z: -0.6, rotationY: 50, height: 2.1,
       props: { ...lightPropsFor(DEFAULT_FIXTURE), modifierId: 'para-90', cct: 4300, dimmer: 15 }
@@ -114,7 +115,7 @@ export function addItem(kind: Exclude<ItemKind, 'prop'>, fixtureId = DEFAULT_FIX
   const base = { id: newId(kind), x: 0, z: 0, rotationY: 0 }
   let item: SceneItem
   if (kind === 'subject') {
-    item = { ...base, kind, name: `Subject ${counts[kind]}`, height: 1.75 }
+    item = { ...base, kind, name: `Subject ${counts[kind]}`, height: 1.75, props: defaultSubjectProps(scene.items.filter(i => i.kind === 'subject').length) }
   } else if (kind === 'light') {
     const fixture = getFixture(fixtureId)
     const height = fixture.shape.type === 'bulb' ? 1.2 : fixture.shape.type === 'tube' ? 1.2 : 2.0

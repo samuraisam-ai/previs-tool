@@ -1,6 +1,7 @@
 import { watch } from 'vue'
 import { reserveIds, scene } from '../scene/store'
 import { worldFrom } from '../scene/world'
+import { ensureSubjectProps } from '../subjects/kinematics'
 import { editor, setSelection } from './editor'
 
 // Undo/redo for everything you build on the plan: snapshots of the document's content, taken once
@@ -86,6 +87,7 @@ export function snapshotScene(): string {
 export function loadScene(json: string, then?: () => void): void {
   commit()
   const doc = JSON.parse(json)
+  ensureSubjectProps(doc.items)
   reserveIds([...doc.walls, ...doc.openings, ...doc.rooms, ...doc.items, ...(doc.marks ?? [])].map((e: { id: string }) => e.id))
   scene.walls.splice(0, scene.walls.length, ...doc.walls)
   scene.openings.splice(0, scene.openings.length, ...doc.openings)

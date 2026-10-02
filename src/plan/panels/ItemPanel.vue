@@ -2,11 +2,12 @@
   <div v-if="item" class="panel-body">
     <h4>{{ kindLabel[item.kind] }}</h4>
     <label>Name <input v-model="item.name" /></label>
-    <label>Height (m) <input type="number" step="0.05" min="0.1" max="6" v-model.number="item.height" /></label>
+    <label>{{ item.kind === 'subject' ? 'Height standing (m)' : 'Height (m)' }} <input type="number" step="0.01" min="0.1" max="6" v-model.number="item.height" /></label>
     <label>Aim (°) <input type="number" step="5" v-model.number="item.rotationY" /></label>
     <div class="readout">x {{ item.x.toFixed(2) }} m · z {{ item.z.toFixed(2) }} m</div>
 
     <LightProperties v-if="item.kind === 'light'" :id="item.id" />
+    <SubjectPanel v-if="item.kind === 'subject'" :id="item.id" />
 
     <p v-if="item.kind === 'subject' && !meter" class="readout">Add a camera to meter this subject.</p>
     <template v-if="item.kind === 'subject' && meter">
@@ -50,6 +51,7 @@ import CameraProperties from '../../components/CameraProperties.vue'
 import LightProperties from '../../components/LightProperties.vue'
 import { crossesLine } from '../lineOfAction'
 import MarksPanel from './MarksPanel.vue'
+import SubjectPanel from './SubjectPanel.vue'
 import { getBody } from '../../library/cameras'
 import { formatShutter } from '../../library/optics'
 import { illuminanceAt, nearestStop, resolveLight, stopsOver, subjectMeterPoint, T_STOPS, tStopFor } from '../../library/photometry'
@@ -59,7 +61,7 @@ import { deleteIds, duplicateSelection } from '../ops'
 
 export default defineComponent({
   name: 'ItemPanel',
-  components: { CameraProperties, LightProperties, MarksPanel },
+  components: { CameraProperties, LightProperties, MarksPanel, SubjectPanel },
   props: {
     id: { type: String, required: true }
   },

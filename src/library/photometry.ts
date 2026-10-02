@@ -1,3 +1,4 @@
+import { faceOf } from '../subjects/kinematics'
 import { lightColour, RGB, toHex } from './colour'
 import { getFixture } from './fixtures'
 import { getModifier } from './modifiers'
@@ -140,9 +141,9 @@ export function illuminanceAt(item: LightItem, point: [number, number, number]):
   return (light.candela * coneFalloff(cos, light)) / dist2
 }
 
-// The point a meter reads: the subject's face.
+// The point a meter reads: the subject's face, wherever the pose puts it (seated, lying…).
 export function subjectMeterPoint(subject: SubjectItem): [number, number, number] {
-  return [subject.x, subject.height - 0.12, subject.z]
+  return faceOf(subject)
 }
 
 // T-stop that exposes `lux` as middle grey with this camera's ISO, shutter and filters.

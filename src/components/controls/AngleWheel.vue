@@ -22,6 +22,7 @@
         <line class="tick" :class="{ major: t % 90 === 0 }" x1="0" x2="0" y1="-52" y2="-46" />
       </g>
       <path v-if="!relative && max <= 180" class="range" :d="arc(0, modelValue)" />
+      <line v-if="signed" class="tick major" x1="0" x2="0" y1="-52" y2="-40" />
       <g :transform="`rotate(${display})`">
         <line class="pointer" x1="0" y1="0" x2="0" y2="-50" />
         <circle class="knob" cx="0" cy="-52" r="6" />
@@ -47,7 +48,9 @@ export default defineComponent({
     snap: { type: Number, default: 15 },
     size: { type: Number, default: 120 },
     label: { type: String, default: 'Angle' },
-    relative: { type: Boolean, default: false }
+    relative: { type: Boolean, default: false },
+    // Signed: angles left of the top read as negative (−180…180), e.g. a head turning left or right.
+    signed: { type: Boolean, default: false }
   },
   emits: ['update:modelValue', 'turn'],
   setup(props, { emit }) {
@@ -59,7 +62,8 @@ export default defineComponent({
       const rect = (svg.value as SVGSVGElement).getBoundingClientRect()
       const dx = event.clientX - (rect.left + rect.width / 2)
       const dy = event.clientY - (rect.top + rect.height / 2)
-      return ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360
+      const a = ((Math.atan2(dx, -dy) * 180) / Math.PI + 360) % 360
+      return props.signed && a > 180 ? a - 360 : a
     }
     const set = (v: number) => {
       const s = props.step
@@ -106,12 +110,18 @@ export default defineComponent({
       else return
       event.preventDefault()
     }
-    const reset = () => { if (!props.relative) set(props.min) }
+    const reset = () => { if (!props.relative) set(props.signed ? 0 : props.min) }
 
     const display = computed(() => (props.relative ? spun.value : props.modelValue))
-    const text = computed(() => (props.relative ? 'Spin to rotate' : `${Math.round(props.modelValue)}°`))
+    const text = computed(() => {
+      if (props.relative) return 'Spin to rotate'
+      const v = Math.round(props.modelValue)
+      if (props.signed) return v === 0 ? 'Centre' : `${Math.abs(v)}° ${v > 0 ? 'right' : 'left'}`
+      return `${v}°`
+    })
     const ticks = Array.from({ length: 24 }, (_, i) => i * 15)
     const arc = (from: number, to: number) => {
+      if (to < from) [from, to] = [to, from]
       if (to <= from) return ''
       const r = 40
       const p = (a: number) => `${Math.sin((a * Math.PI) / 180) * r} ${-Math.cos((a * Math.PI) / 180) * r}`

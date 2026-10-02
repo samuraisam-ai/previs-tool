@@ -24,8 +24,8 @@
       <g v-for="t in ticks" :key="t" :transform="`rotate(${t})`">
         <line class="tick" :class="{ major: t % 45 === 0 }" x1="46" x2="52" y1="0" y2="0" />
       </g>
-      <text class="scale" x="0" y="-40" text-anchor="middle">UP</text>
-      <text class="scale" x="0" y="46" text-anchor="middle">DOWN</text>
+      <text class="scale" x="0" y="-40" text-anchor="middle">{{ upWord.toUpperCase() }}</text>
+      <text class="scale" x="0" y="46" text-anchor="middle">{{ downWord.toUpperCase() }}</text>
       <line class="horizon" x1="-52" x2="52" y1="0" y2="0" />
 
       <g :transform="`rotate(${modelValue})`">
@@ -34,6 +34,10 @@
         <template v-if="icon === 'camera'">
           <rect class="head" x="-12" y="-7" width="16" height="14" rx="2" />
           <rect class="head" x="4" y="-5" width="10" height="10" rx="1" />
+        </template>
+        <template v-else-if="icon === 'person'">
+          <circle class="head" cx="-2" cy="0" r="10" />
+          <path class="head" d="M 7 -3 l 7 3 l -7 3 z" />
         </template>
         <template v-else>
           <path class="head" d="M -12 -6 h 8 l 14 -6 v 24 l -14 -6 h -8 z" />
@@ -58,7 +62,10 @@ export default defineComponent({
     max: { type: Number, default: 90 },
     size: { type: Number, default: 132 },
     icon: { type: String, default: 'light' },
-    label: { type: String, default: 'Tilt' }
+    label: { type: String, default: 'Tilt' },
+    // Words for the readout (e.g. a lean reads 'forward' / 'back').
+    downWord: { type: String, default: 'down' },
+    upWord: { type: String, default: 'up' }
   },
   emits: ['update:modelValue'],
   setup(props, { emit }) {
@@ -99,7 +106,7 @@ export default defineComponent({
 
     const text = computed(() => {
       const v = props.modelValue
-      return v === 0 ? 'Level' : v > 0 ? `${v}° down` : `${-v}° up`
+      return v === 0 ? 'Level' : v > 0 ? `${v}° ${props.downWord}` : `${-v}° ${props.upWord}`
     })
     const ticks = Array.from({ length: 13 }, (_, i) => -90 + i * 15)
 

@@ -65,7 +65,25 @@ interface BaseItem {
   height: number
 }
 
-export interface SubjectItem extends BaseItem { kind: 'subject' }
+// ── People ──────────────────────────────────────────────────────────────────
+// Subjects are posable figures. `height` (on the item) is the standing height; the pose decides
+// where the face actually is (seated, lying…). See src/subjects/.
+export type SubjectLook = 'mannequin' | 'realistic'
+export interface SubjectProps {
+  look: SubjectLook
+  character: string // realistic character id (unused for the mannequin)
+  skin: string
+  top: string
+  bottom: string
+  shoes: string
+  pose: string // PoseId from src/subjects/poses.ts
+  headYaw: number // ° + = turn to their right
+  headPitch: number // ° + = look down
+  lean: number // ° + = lean forward
+  lookAt: string | null // subject or camera id the head turns to
+  seat: { propId: string; spot: number } | null
+}
+export interface SubjectItem extends BaseItem { kind: 'subject'; props: SubjectProps }
 export interface LightItem extends BaseItem {
   kind: 'light'
   props: LightProps
@@ -185,6 +203,8 @@ export interface Mark {
   note: string
   hold: number // seconds spent on the mark during playback
   pace: MarkPace // how fast the owner travels *to* this mark
+  pose?: string // subjects: the pose held on this mark (PoseId); unset = the subject's own pose
+  lookAt?: string | null // subjects: who/what they look at on this mark
 }
 
 export type WorldPreset = 'morning' | 'day' | 'evening' | 'night'
