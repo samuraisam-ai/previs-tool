@@ -50,6 +50,8 @@ export interface Kit {
   // Tube along a path of points with radius r.
   tube(slot: string, path: V3[], r: number, opts?: PartOpts & { sides?: number }): void
   torus(slot: string, dims: { d: number; thickness: number }, at: V3, opts?: PartOpts): void
+  // An outline in the x/y plane (counter-clockwise points), extruded `depth` along z, centred on `at`.
+  prism(slot: string, outline: Array<[number, number]>, depth: number, at: V3, opts?: PartOpts): void
   // Flat rectangle facing +z (before rotation).
   plane(slot: string, size: { w: number; h: number }, at: V3, opts?: PartOpts & { doubleSided?: boolean }): void
   // Leaf cards / foliage clump: a cheap cluster of crossed planes.
@@ -106,8 +108,9 @@ export interface PropDef {
   elevation?: number // default base height (wall art, pendants…)
   // Height of the top surface other props can stand on, relative to the base.
   surfaceTop?: (p: PropParams) => number
-  // Some options set the footprint (e.g. bed size): return the size for the new option values.
-  sizeFor?: (o: { [id: string]: OptionValue }, current: { w: number; d: number; h: number }) => { w: number; d: number; h: number } | null
+  // Some options set the footprint (e.g. bed size, sofa seats): return the new size, or null when
+  // the changed option doesn't affect it. `changed` is undefined when the prop is first created.
+  sizeFor?: (o: { [id: string]: OptionValue }, current: { w: number; d: number; h: number }, changed?: string) => { w: number; d: number; h: number } | null
   // Slot that can show the user's own picture (paintings, posters, frames, screens).
   imageSlot?: string
   build(kit: Kit, p: PropParams): void

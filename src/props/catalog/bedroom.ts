@@ -31,7 +31,8 @@ export const bed: PropDef = {
     { id: 'pillows', label: 'Pillows', default: { material: 'fabric', colour: '#e8e2d6' } },
     { id: 'throw', label: 'Throw', default: { material: 'fabric', colour: '#a5532f', pattern: 'stripes', colour2: '#d8cdb8', scale: 0.25 } }
   ],
-  sizeFor: (o, cur) => {
+  sizeFor: (o, cur, changed) => {
+    if (changed && changed !== 'size') return null
     const s = BED_SIZES[String(o.size)]
     return s ? { w: s[0] + 0.08, d: s[1] + 0.12, h: cur.h } : null
   },
@@ -340,4 +341,36 @@ export const painting: PropDef = {
   plan: ({ w, d }) => [rect(0, 0, w, Math.max(d, 0.03), 'body', 0, 'frame')]
 }
 
-export const BEDROOM: PropDef[] = [bed, nightstand, dresser, wardrobe, armchair, bench, floorMirror, rug, tableLamp, painting]
+export const dressingTable: PropDef = {
+  id: 'dressing-table', name: 'Dressing table + stool', category: 'bedroom', rooms: ['bedroom'], keywords: ['vanity', 'make-up table', 'dresser'],
+  size: { w: 1.0, d: 0.45, h: 1.45 }, mount: 'floor',
+  options: [{ id: 'mirror', label: 'Mirror', type: 'select', default: 'round', choices: [{ value: 'round', label: 'Round' }, { value: 'rect', label: 'Rectangle' }, { value: 'none', label: 'None' }] }, { id: 'stool', label: 'Stool', type: 'toggle', default: true }, { ...LEG_OPTION }, { ...HANDLE_OPTION, default: 'knob' }],
+  slots: [
+    { id: 'body', label: 'Table', default: { material: 'painted', colour: '#efeae0' } },
+    { id: 'mirror', label: 'Mirror', default: { material: 'mirror', colour: '#e4e7ea' } },
+    { id: 'stool', label: 'Stool seat', default: { material: 'velvet', colour: '#b9827f' } },
+    { id: 'handles', label: 'Handles', default: { material: 'metal', colour: '#c9a04f' } }
+  ],
+  surfaceTop: () => 0.76,
+  build(kit, { w, d, h, o }) {
+    const top = 0.76
+    legs(kit, 'body', w, d, top - 0.18, String(o.legs), 0.04)
+    kit.box('body', [w, 0.18, d], [0, top - 0.09, 0])
+    fronts(kit, 'body', 'handles', String(o.handles), { w: w - 0.04, h: 0.14, y0: top - 0.16, faceZ: d / 2 }, 2, 1)
+    if (o.mirror === 'round') {
+      const r = Math.min(w * 0.6, h - top - 0.05)
+      kit.cylinder('mirror', { d: r, h: 0.01, sides: 40 }, [0, top + 0.03 + r / 2, -d / 2 + 0.03], { rot: [90, 0, 0] })
+    } else if (o.mirror === 'rect') kit.plane('mirror', { w: w * 0.7, h: h - top - 0.06 }, [0, top + (h - top) / 2, -d / 2 + 0.03], { fit: true })
+    if (o.stool) {
+      kit.cylinder('body', { d: 0.03, h: 0.42, sides: 8 }, [0, 0.21, d / 2 + 0.25], { small: true })
+      kit.soft('stool', [0.4, 0.08, 0.32], [0, 0.46, d / 2 + 0.25], 0.03)
+    }
+  },
+  plan: ({ w, d, o }) => {
+    const out: PlanShape[] = [rect(0, 0, w, d, 'body', 0, 'body')]
+    if (o.stool) out.push(rect(0, d / 2 + 0.25, 0.4, 0.32, 'soft', 0.04, 'stool'))
+    return out
+  }
+}
+
+export const BEDROOM: PropDef[] = [bed, nightstand, dresser, wardrobe, dressingTable, armchair, bench, floorMirror, rug, tableLamp, painting]

@@ -103,8 +103,8 @@ export default defineComponent({
     const setOption = (id: string, value: OptionValue) => each(p => {
       p.props.options = { ...p.props.options, [id]: value }
       // Some options set the size (e.g. bed size).
-      const size = getDef(p.props.catalogId)?.sizeFor?.(p.props.options, { w: p.props.w, d: p.props.d, h: p.props.h })
-      if (size && id === 'size') Object.assign(p.props, size)
+      const size = getDef(p.props.catalogId)?.sizeFor?.(p.props.options, { w: p.props.w, d: p.props.d, h: p.props.h }, id)
+      if (size) Object.assign(p.props, size)
     })
     const setFinish = (slot: string, f: Finish) => each(p => { p.props.finishes = { ...p.props.finishes, [slot]: { ...f } } })
     const resetFinish = (slot: string) => {

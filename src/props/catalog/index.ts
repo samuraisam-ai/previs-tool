@@ -1,8 +1,20 @@
 import { Category, PropDef } from '../types'
+import { BATHROOM } from './bathroom'
 import { BEDROOM } from './bedroom'
+import { BUILD } from './build'
+import { DECOR, PLANTS } from './decor'
+import { DINING } from './dining'
+import { KITCHEN } from './kitchen'
+import { LIVING } from './living'
+import { HALLWAY, OFFICE } from './office'
+import { OUTDOOR } from './outdoor'
+import { PRACTICALS } from './practicals'
 
 // Every catalogue prop. Each file adds a room or category's worth of items.
-export const CATALOG: PropDef[] = [...BEDROOM]
+export const CATALOG: PropDef[] = [
+  ...BEDROOM, ...LIVING, ...KITCHEN, ...DINING, ...BATHROOM, ...OFFICE, ...HALLWAY, ...OUTDOOR,
+  ...DECOR, ...PLANTS, ...PRACTICALS, ...BUILD
+]
 
 const byId = new Map(CATALOG.map(d => [d.id, d]))
 export const getDef = (id: string): PropDef | undefined => byId.get(id)
