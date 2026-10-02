@@ -16,6 +16,7 @@
         @capture="captureFrame"
       />
       <div v-if="renderState.preparing" class="preparing">Preparing lights…</div>
+      <div v-else-if="renderState.building.left" class="preparing">Building set… {{ renderState.building.total - renderState.building.left }} / {{ renderState.building.total }}</div>
       <div v-if="notice" class="notice">{{ notice }}</div>
       <div class="overlay">
         <label>

@@ -69,6 +69,9 @@
         <label class="check"><input type="checkbox" v-model="editor.snap.objects" /> Wall ends &amp; corners</label>
         <p class="readout">Hold Alt while dragging to place freely.</p>
         <WorldPanel />
+        <h4 class="section">Demo</h4>
+        <button class="demo" @click="loadDemo">Load demo house</button>
+        <p class="readout">A furnished 3-bedroom house (~150 props, practical lamps, two cameras) to explore. Undo (⌘Z) brings your scene back.</p>
       </div>
     </aside>
   </div>
@@ -84,6 +87,7 @@ import PropLayer from '../plan/PropLayer.vue'
 import PropLibrary from '../props/PropLibrary.vue'
 import PropPanel from '../plan/panels/PropPanel.vue'
 import { addProp } from '../props/add'
+import { buildDemoHouse } from '../props/demoHouse'
 import { settleProp, settleProps } from '../props/placement'
 import BlockingBar from '../plan/BlockingBar.vue'
 import { playback, stop as stopPlayback, togglePlay } from '../plan/blocking'
@@ -620,7 +624,14 @@ export default defineComponent({
       if (kind === 'light') { showProps.value = false; showLibrary.value = true }
       else if (kind === 'props') { showLibrary.value = false; showProps.value = true }
       else if (kind.startsWith('prop:')) addPropPicked(kind.slice(5))
+      else if (kind === 'demo') loadDemo()
       else if (kind === 'subject' || kind === 'camera') add(kind)
+    }
+    const loadDemo = () => {
+      if (!window.confirm('Replace the current scene with the furnished demo house? Undo (⌘Z) brings your scene back.')) return
+      buildDemoHouse()
+      clearSelection()
+      fit()
     }
     // Set dressing: the library stays open so several props can be added in a row.
     const showProps = ref(false)
@@ -732,7 +743,7 @@ export default defineComponent({
 
     return {
       capture, lineToggle,
-      svg, area, editor, setTool, showLibrary, showProps, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
+      svg, area, editor, setTool, showLibrary, showProps, loadDemo, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
       onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
     }
   }

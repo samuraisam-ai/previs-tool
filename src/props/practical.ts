@@ -25,10 +25,10 @@ export function syncPractical(prop: PropItem): void {
   })
 }
 
-export function lightIt(prop: PropItem): LightItem | null {
+export function lightIt(prop: PropItem, record = true): LightItem | null {
   const def = getDef(prop.props.catalogId)
   if (!def?.practical || !def.bulb) return null
-  commit()
+  if (record) commit()
   const light = addItem('light', def.practical.fixture) as LightItem
   light.attachedTo = prop.id
   light.name = `${prop.name} bulb`
@@ -36,7 +36,7 @@ export function lightIt(prop: PropItem): LightItem | null {
   light.props.dimmer = 40
   light.props.cct = 2700
   syncPractical(prop)
-  commit()
+  if (record) commit()
   return light
 }
 

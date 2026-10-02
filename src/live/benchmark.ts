@@ -158,3 +158,30 @@ export async function setup(live: LiveScene, cameraView: boolean): Promise<void>
   }
   live.drawPending()
 }
+
+// The furnished 3-bedroom demo house as a stress scene: build time (sliced, as users see it),
+// steady frame time in orbit and through Camera A, and a moving subject (shadow refresh throttled).
+export async function demoHouse(live: LiveScene): Promise<{ [k: string]: number }> {
+  const { buildDemoHouse } = await import('../props/demoHouse')
+  buildDemoHouse()
+  const internals = live as unknown as { propsLayer: { pending: number; count: number }; frame(): void; awaitingReady: boolean; engine: { _gl: WebGL2RenderingContext } }
+  const gl = internals.engine._gl
+  const t0 = performance.now()
+  live.sync(scene, true)
+  let guard = 0
+  while ((internals.propsLayer.pending || internals.awaitingReady) && guard++ < 2000) {
+    internals.frame()
+    if (guard % 10 === 0) await new Promise(r => setTimeout(r, 0))
+  }
+  const buildMs = performance.now() - t0
+  const median = (fn: () => void, n = 15) => {
+    const ts: number[] = []
+    for (let i = 0; i < n; i++) { const t = performance.now(); fn(); gl.finish(); ts.push(performance.now() - t) }
+    ts.sort((a, b) => a - b)
+    return Math.round(ts[Math.floor(n / 2)] * 10) / 10
+  }
+  const orbitMs = median(() => live.scene.render())
+  const subject = scene.items.find(i => i.kind === 'subject')
+  const movingMs = median(() => { if (subject) subject.x += 0.01; live.sync(scene, false); live.scene.render() })
+  return { props: internals.propsLayer.count, buildMs: Math.round(buildMs), orbitMs, movingSubjectMs: movingMs, gpuMB: gpuMemoryMB(live) }
+}

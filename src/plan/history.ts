@@ -14,7 +14,8 @@ let restoring = false
 let timer: number | undefined
 
 const snapshot = () => JSON.stringify({
-  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items, lineOfAction: scene.lineOfAction, marks: scene.marks
+  walls: scene.walls, openings: scene.openings, rooms: scene.rooms, items: scene.items, lineOfAction: scene.lineOfAction, marks: scene.marks,
+  world: scene.world
 })
 
 export function commit(): void {
@@ -36,6 +37,7 @@ function restore(state: string): void {
   scene.items.splice(0, scene.items.length, ...doc.items)
   scene.lineOfAction = doc.lineOfAction ?? null
   scene.marks.splice(0, scene.marks.length, ...(doc.marks ?? []))
+  if (doc.world) scene.world = doc.world
   const exists = (id: string) => [...scene.walls, ...scene.openings, ...scene.rooms, ...scene.items].some(e => e.id === id)
   setSelection(editor.selection.filter(exists))
   if (scene.activeCameraId && !exists(scene.activeCameraId)) scene.activeCameraId = scene.items.find(i => i.kind === 'camera')?.id ?? null
@@ -64,7 +66,7 @@ export const canRedo = () => future.length > 0
 
 export function startHistory(): void {
   present = snapshot()
-  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items, scene.lineOfAction, scene.marks], () => {
+  watch(() => [scene.walls, scene.openings, scene.rooms, scene.items, scene.lineOfAction, scene.marks, scene.world], () => {
     window.clearTimeout(timer)
     timer = window.setTimeout(() => { if (!editor.dragging) commit() }, 350)
   }, { deep: true })
@@ -79,8 +81,9 @@ export function snapshotScene(): string {
   })
 }
 
-// Replace the current scene with a saved one, as a single undoable step.
-export function loadScene(json: string): void {
+// Replace the current scene with a saved one, as a single undoable step. `then` runs before the
+// step is recorded (follow-up work such as settling props stays part of the same undo step).
+export function loadScene(json: string, then?: () => void): void {
   commit()
   const doc = JSON.parse(json)
   reserveIds([...doc.walls, ...doc.openings, ...doc.rooms, ...doc.items, ...(doc.marks ?? [])].map((e: { id: string }) => e.id))
@@ -93,5 +96,6 @@ export function loadScene(json: string): void {
   scene.marks.splice(0, scene.marks.length, ...(doc.marks ?? []))
   scene.activeCameraId = doc.activeCameraId ?? scene.items.find(i => i.kind === 'camera')?.id ?? null
   setSelection([])
+  then?.()
   commit()
 }

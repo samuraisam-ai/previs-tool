@@ -4,6 +4,8 @@ import { reactive } from 'vue'
 export const renderState = reactive({
   // Shaders are compiling for a new light setup; the last good frame stays on screen.
   preparing: false,
+  // Set dressing still being built (large scenes build over several frames): props left / total.
+  building: { left: 0, total: 0 },
   // Fixtures currently casting shadows (the rest are over the shadow budget).
   shadowed: [] as string[],
   // Active quality tier and how many shadowed lights it allows.

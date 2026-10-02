@@ -39,10 +39,20 @@ export class PropsLayer {
     this.materials = new PropMaterials(scene, surface, textureSize, imageUrl, onChange)
   }
 
+  // Props still waiting to be built (a big set builds over several frames).
+  pending = 0
+  // When the set is still, every prop sharing a material is merged into one batch mesh: hundreds of
+  // draw calls become roughly one per material. Editing un-batches; it re-batches once idle.
+  private batches: Array<{ mesh: Mesh; small: boolean }> = []
+  private lastChange = 0
+
   // Returns true when anything changed (shadows and depth need refreshing).
   // `glowFor` gives a lit practical's shade glow (bulb colour, level), or null.
-  sync(props: PropItem[], glowFor: (id: string) => Glow | null = () => null): boolean {
+  // Building stops at `deadline` (performance.now() ms); the rest wait for the next call, so a
+  // whole house never freezes the app — it fills in over a few frames.
+  sync(props: PropItem[], glowFor: (id: string) => Glow | null = () => null, deadline = Infinity): boolean {
     let changed = false
+    this.pending = 0
     const seen = new Set<string>()
     props.forEach(item => {
       seen.add(item.id)
@@ -51,6 +61,7 @@ export class PropsLayer {
       const shapeKey = JSON.stringify([p.catalogId, p.w, p.d, p.h, p.options, p.finishes, glow])
       let b = this.built.get(item.id)
       if (!b || b.shapeKey !== shapeKey) {
+        if (performance.now() > deadline) { this.pending++; return }
         if (b) this.remove(item.id)
         b = this.build(item, shapeKey, glow)
         this.built.set(item.id, b)
@@ -66,7 +77,44 @@ export class PropsLayer {
     Array.from(this.built.keys()).forEach(id => {
       if (!seen.has(id)) { this.remove(id); changed = true }
     })
+    if (changed) {
+      this.unbatch()
+      this.lastChange = performance.now()
+    }
     return changed
+  }
+
+  // Merge the still set into per-material batches. Returns true when it did (shadows need a refresh).
+  batchIfIdle(idleMs = 500): boolean {
+    if (this.batches.length || this.pending || !this.built.size || performance.now() - this.lastChange < idleMs) return false
+    const groups = new Map<string, { material: PBRMaterial; small: boolean; meshes: Mesh[] }>()
+    this.built.forEach(b => b.meshes.forEach(m => {
+      const key = `${m.material.uniqueId}|${m.small ? 1 : 0}`
+      const g = groups.get(key) ?? { material: m.material, small: m.small, meshes: [] }
+      g.meshes.push(m.mesh)
+      groups.set(key, g)
+    }))
+    groups.forEach(g => {
+      if (g.meshes.length < 2) return
+      const merged = Mesh.MergeMeshes(g.meshes, false, true, undefined, false, false)
+      if (!merged) return
+      merged.name = `prop-batch-${g.material.name}`
+      merged.material = g.material
+      merged.isPickable = false
+      merged.receiveShadows = true
+      merged.layerMask = this.layerMask
+      merged.freezeWorldMatrix()
+      g.meshes.forEach(m => m.setEnabled(false))
+      this.batches.push({ mesh: merged, small: g.small })
+    })
+    return this.batches.length > 0
+  }
+
+  private unbatch(): void {
+    if (!this.batches.length) return
+    this.batches.forEach(b => b.mesh.dispose(false, false))
+    this.batches = []
+    this.built.forEach(b => b.meshes.forEach(m => m.mesh.setEnabled(true)))
   }
 
   private build(item: PropItem, shapeKey: string, glow: Glow | null): Built {
@@ -110,7 +158,8 @@ export class PropsLayer {
   // Shadow casters; the Lite tier leaves small details out.
   casters(includeSmall: boolean): AbstractMesh[] {
     const out: AbstractMesh[] = []
-    this.built.forEach(b => b.meshes.forEach(m => { if (includeSmall || !m.small) out.push(m.mesh) }))
+    this.batches.forEach(b => { if (includeSmall || !b.small) out.push(b.mesh) })
+    this.built.forEach(b => b.meshes.forEach(m => { if (m.mesh.isEnabled() && (includeSmall || !m.small)) out.push(m.mesh) }))
     return out
   }
 
@@ -119,6 +168,7 @@ export class PropsLayer {
   }
 
   dispose(): void {
+    this.unbatch()
     Array.from(this.built.keys()).forEach(id => this.remove(id))
     this.materials.dispose()
     this.root.dispose()

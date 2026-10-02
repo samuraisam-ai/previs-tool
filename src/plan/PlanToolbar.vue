@@ -118,7 +118,8 @@ const SECTIONS: Array<{ title: string; items: MenuItem[] }> = [
   {
     title: 'Set dressing',
     items: [
-      { id: 'props', label: 'Props library…', hint: 'Furniture, decor, plants, practicals — by room', icon: 'sofa', key: 'J', add: 'props' }
+      { id: 'props', label: 'Props library…', hint: 'Furniture, decor, plants, practicals — by room', icon: 'sofa', key: 'J', add: 'props' },
+      { id: 'demo', label: 'Demo house', hint: 'A furnished 3-bedroom house to explore', icon: 'room', add: 'demo' }
     ]
   }
 ]

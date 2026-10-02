@@ -27,12 +27,16 @@ import { sceneBounce } from '../scene/store'
 import { bounceLux, worldLux } from '../scene/world'
 import { ownerColour } from '../plan/marks'
 import { TapeMarks } from './TapeMarks'
-import { PropsLayer } from './PropsLayer'
+import { Glow, PropsLayer } from './PropsLayer'
 import { storage } from '../setups/storage'
 import { attachDisplay, CameraPipeline, DisplaySettings } from './CameraPipeline'
 import { LightPool, LightRequest, Slot } from './LightPool'
 import { renderState, Tier, TIERS } from './renderState'
 
+// Time per frame spent building props when a big set arrives (the rest continue next frame).
+const PROP_BUILD_BUDGET_MS = 28
+// While subjects move, shadow maps refresh at most this often (ms).
+const SHADOW_MOTION_MS = 150
 const DEG = Math.PI / 180
 // Widest cone the shadow map covers; wider sources still light, but only shadow inside this.
 const MAX_SHADOW_CONE = 120
@@ -124,6 +128,8 @@ export class LiveScene {
   private cameraGeometry = new Map<string, string>()
   private slots = new Map<string, Slot>()
   private worldKey = ''
+  private propItems: PropItem[] = []
+  private propGlow: (id: string) => Glow | null = () => null
   private tapeMarks: TapeMarks
   private propsLayer: PropsLayer
   private marksInCameras = false
@@ -254,9 +260,49 @@ export class LiveScene {
     }
   }
 
+  private lastShadowRefresh = 0
+  private shadowRefreshPending = false
+
+  private refreshShadowsNow(): void {
+    this.pool.refreshShadows(this.shadowCasters())
+    this.lastShadowRefresh = performance.now()
+    this.shadowRefreshPending = false
+  }
+
+  private refreshShadowsSoon(): void {
+    if (performance.now() - this.lastShadowRefresh >= SHADOW_MOTION_MS) this.refreshShadowsNow()
+    else this.shadowRefreshPending = true
+  }
+
   private frame(): void {
     if (!this.active) return
+    if (this.shadowRefreshPending && performance.now() - this.lastShadowRefresh >= SHADOW_MOTION_MS) {
+      this.refreshShadowsNow()
+      this.requestRender()
+    }
+    this.buildPendingProps()
+    // Once the set is still, merge props into per-material batches (far fewer draw calls).
+    if (this.propsLayer.batchIfIdle()) {
+      this.refreshShadowsNow()
+      this.requestRender()
+    }
     this.drawPending()
+  }
+
+  // Continue building a large set a slice at a time (keeps the app responsive).
+  private buildPendingProps(): void {
+    if (!this.propsLayer.pending) return
+    if (this.propsLayer.sync(this.propItems, this.propGlow, performance.now() + PROP_BUILD_BUDGET_MS)) {
+      if (!this.propsLayer.pending) this.pool.refreshShadows(this.shadowCasters())
+      this.entries.forEach(entry => entry.pipeline?.invalidate())
+      this.requestRender()
+    }
+    this.reportBuilding()
+  }
+
+  private reportBuilding(): void {
+    const left = this.propsLayer.pending
+    if (left !== renderState.building.left) renderState.building = { left, total: left ? Math.max(renderState.building.total, left + this.propsLayer.count) : 0 }
   }
 
   // Draw whatever is pending (full render, reprocess, or nothing). Public for the benchmark.
@@ -513,15 +559,22 @@ export class LiveScene {
     // Lamps with a lit practical bulb glow in the bulb's colour, by its dimmer.
     const bulbs = new Map<string, LightItem>()
     doc.items.forEach(i => { if (i.kind === 'light' && i.attachedTo) bulbs.set(i.attachedTo, i) })
-    const propsChanged = this.propsLayer.sync(doc.items.filter((i): i is PropItem => i.kind === 'prop'), id => {
+    this.propItems = doc.items.filter((i): i is PropItem => i.kind === 'prop')
+    this.propGlow = id => {
       const bulb = bulbs.get(id)
       if (!bulb || bulb.props.dimmer <= 0) return null
       const c = lightColour(bulb.props.mode, bulb.props.cct, bulb.props.gm, bulb.props.hue, bulb.props.sat)
       return { colour: [+c[0].toFixed(3), +c[1].toFixed(3), +c[2].toFixed(3)], level: Math.round(bulb.props.dimmer) / 100 * 1.6 }
-    })
+    }
+    const propsChanged = this.propsLayer.sync(this.propItems, this.propGlow, performance.now() + PROP_BUILD_BUDGET_MS)
+    this.reportBuilding()
     this.propsLayer.materials.setBrightness((0.8 * key) / Math.PI)
     if (propsChanged) this.requestRender()
-    if (rebuilt || subjectsChanged || propsChanged) this.pool.refreshShadows(this.shadowCasters())
+    // Shadow maps re-draw every caster (a furnished house is hundreds of meshes), so a moving subject
+    // (blocking playback, dragging) refreshes them at most every SHADOW_MOTION_MS; edits that rebuild
+    // the set refresh at once.
+    if (rebuilt || propsChanged) this.refreshShadowsNow()
+    else if (subjectsChanged) this.refreshShadowsSoon()
     else if (lightsChanged) this.pool.refreshShadows(null)
     // Depth (for depth of field) only changes when something moved, not when exposure/WB/ISO change.
     if (rebuilt || subjectsChanged || lightsChanged || cameraMoved || propsChanged) this.entries.forEach(entry => entry.pipeline?.invalidate())
