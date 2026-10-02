@@ -73,6 +73,11 @@ export function createProduction(title: string): Production {
   return setups.productions[0]
 }
 
+export function markSample(production: Production, sampleId: string): void {
+  production.sampleId = sampleId
+  persist(storage.saveProduction(production))
+}
+
 export function updateProduction(production: Production, patch: Partial<Pick<Production, 'title' | 'sceneOrder'>>): void {
   Object.assign(production, patch)
   persist(storage.saveProduction(touch(production)))

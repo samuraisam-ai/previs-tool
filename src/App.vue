@@ -7,12 +7,14 @@
         <button :class="{ on: nav.view === 'live' }" @click="nav.view = 'live'">Live View</button>
         <button :class="{ on: nav.view === 'setups' }" @click="nav.view = 'setups'">Setups</button>
       </nav>
+      <button :class="['guide-btn', { on: nav.view === 'guide' }]" title="User guide" @click="nav.view = 'guide'">? Guide</button>
     </header>
     <main>
       <!-- Both views stay mounted so the Babylon engine is created once. -->
       <FloorPlanView v-show="nav.view === 'plan'" :active="nav.view === 'plan'" />
       <LiveView v-show="nav.view === 'live'" :active="nav.view === 'live'" />
       <SetupsView v-if="nav.view === 'setups'" />
+      <GuideView v-if="nav.view === 'guide'" />
     </main>
     <CaptureDialog v-if="captureState.request" :key="captureState.request.previewUrl" :request="captureState.request" />
     <CaptureToast />
@@ -25,7 +27,9 @@ import { nav } from './nav'
 import { captureState } from './setups/capture'
 import CaptureDialog from './setups/components/CaptureDialog.vue'
 import CaptureToast from './setups/components/CaptureToast.vue'
+import { ensureSamples } from './setups/samples'
 import { initSetups } from './setups/store'
+import GuideView from './guide/GuideView.vue'
 import FloorPlanView from './views/FloorPlanView.vue'
 import LiveView from './views/LiveView.vue'
 import SetupsView from './views/SetupsView.vue'
@@ -36,11 +40,12 @@ export default defineComponent({
     FloorPlanView,
     LiveView,
     SetupsView,
+    GuideView,
     CaptureDialog,
     CaptureToast
   },
   setup() {
-    initSetups()
+    initSetups().then(ensureSamples)
     return { nav, captureState }
   }
 })
@@ -100,11 +105,12 @@ nav {
   display: flex;
   gap: 4px;
 }
-nav button.on {
+nav button.on, .guide-btn.on {
   background: var(--accent);
   border-color: var(--accent);
   color: #1a1a1a;
 }
+.guide-btn { margin-left: auto; white-space: nowrap; }
 main {
   flex: 1;
   min-height: 0;

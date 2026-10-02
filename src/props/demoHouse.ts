@@ -25,7 +25,16 @@ import { lightIt } from './practical'
 
 type Rect = [number, number, number, number] // x0, z0, x1, z1
 
-const ROOMS: Array<{ name: string; r: Rect; floor: Partial<Finish> & { material: Finish['material'] }; walls?: Partial<Finish> & { material: Finish['material'] } }> = [
+type FinishSpec = Partial<Finish> & { material: Finish['material'] }
+interface RoomSpec { name: string; r: Rect; floor: FinishSpec; walls?: FinishSpec }
+// [kind, x, z, width?, sill?] — openings are found on whichever wall runs through the point.
+type OpeningSpec = [OpeningKind, number, number, number?, number?]
+interface P { id: string; x: number; z: number; r?: number; o?: { [k: string]: OptionValue }; s?: { w?: number; d?: number; h?: number }; f?: { [slot: string]: Partial<Finish> }; name?: string; e?: number; light?: boolean }
+interface CastSpec { name: string; x: number; z: number; r: number; height: number }
+interface CamSpec { name: string; x: number; z: number; r: number; height: number; lens: string; subject: number }
+export interface HouseSpec { rooms: RoomSpec[]; openings: OpeningSpec[]; props: P[]; cast: CastSpec[]; cameras: CamSpec[] }
+
+const ROOMS: RoomSpec[] = [
   { name: 'Living room', r: [-7, -5, 0, 0], floor: { material: 'wood', colour: '#8a5a3a', colour2: '#6e4429', pattern: 'planks', scale: 1.1 }, walls: { material: 'painted', colour: '#e9e2d4' } },
   { name: 'Kitchen & dining', r: [0, -5, 7, 0], floor: { material: 'ceramic', colour: '#d9d6cf', colour2: '#9a958c', pattern: 'tiles', scale: 0.6, roughness: 0.3 }, walls: { material: 'painted', colour: '#efeae0' } },
   { name: 'Hallway', r: [-7, 0, 7, 1.4], floor: { material: 'wood', colour: '#8a5a3a', colour2: '#6e4429', pattern: 'herringbone', scale: 0.8 } },
@@ -35,16 +44,13 @@ const ROOMS: Array<{ name: string; r: Rect; floor: Partial<Finish> & { material:
   { name: 'Bedroom 3', r: [4, 1.4, 7, 5], floor: { material: 'wood', colour: '#d2b48c', colour2: '#b89a72', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#d9e1e8' } }
 ]
 
-// [kind, x, z, width?, sill?] — openings are found on whichever wall runs through the point.
-const OPENINGS: Array<[OpeningKind, number, number, number?, number?]> = [
+const OPENINGS: OpeningSpec[] = [
   ['door', -7, 0.7], // front door
   ['opening', -3.5, 0, 1.2], ['opening', 3.5, 0, 1.6], ['opening', 0, -2.6, 1.8],
   ['door', -3.0, 1.4], ['door', -0.5, 1.4], ['door', 2.0, 1.4], ['door', 5.0, 1.4],
   ['window', -3.5, -5, 2.2], ['window', 4.6, -5, 1.6], ['window', 1.6, -5, 1.4],
   ['window', -6.0, 5, 1.0], ['window', -0.5, 5, 0.7, 1.4], ['window', 2.5, 5, 1.2], ['window', 5.5, 5, 1.2], ['window', 7, -2.6, 1.4]
 ]
-
-interface P { id: string; x: number; z: number; r?: number; o?: { [k: string]: OptionValue }; s?: { w?: number; d?: number; h?: number }; f?: { [slot: string]: Partial<Finish> }; name?: string; e?: number; light?: boolean }
 
 const PROPS: P[] = [
   // ── Living room ─────────────────────────────────────────────────────────
@@ -197,6 +203,108 @@ const PROPS: P[] = [
   { id: 'candles', x: -0.3, z: -4.55, r: 270 }
 ]
 
+export const THREE_BED: HouseSpec = {
+  rooms: ROOMS,
+  openings: OPENINGS,
+  props: PROPS,
+  cast: [{ name: 'Maya', x: -2.2, z: -2.5, r: 270, height: 1.68 }, { name: 'Sam', x: 3.4, z: -2.0, r: 120, height: 1.82 }],
+  cameras: [
+    { name: 'Camera A', x: -5.8, z: -1.6, r: 115, height: 1.45, lens: 'aizu-35', subject: 0 },
+    { name: 'Camera B', x: 6.2, z: -0.6, r: 235, height: 1.6, lens: 'aizu-50', subject: 1 }
+  ]
+}
+
+// A spruced-up 1-bedroom apartment (~45 props): open-plan lounge and kitchen at the front,
+// bedroom and bathroom at the back. Smaller and quicker to find your way around.
+//
+//   z 3.5 ┌─────────────┬────────┐
+//         │   Bedroom   │  Bath  │
+//     0   ├─────────────┼────────┤
+//         │   Lounge    │Kitchen │
+//   −3.5  └─────────────┴────────┘
+//       x −4           1.2       4
+export const ONE_BED: HouseSpec = {
+  rooms: [
+    { name: 'Lounge', r: [-4, -3.5, 1.2, 0], floor: { material: 'wood', colour: '#b98a5a', colour2: '#9c6f43', pattern: 'herringbone', scale: 0.8 }, walls: { material: 'painted', colour: '#e9e2d4' } },
+    { name: 'Kitchen', r: [1.2, -3.5, 4, 0], floor: { material: 'ceramic', colour: '#1f1f21', colour2: '#e0dcd2', pattern: 'tiles', scale: 0.4, roughness: 0.3 }, walls: { material: 'painted', colour: '#9aa88f' } },
+    { name: 'Bedroom', r: [-4, 0, 1.2, 3.5], floor: { material: 'wood', colour: '#d2b48c', colour2: '#b89a72', pattern: 'planks', scale: 1.0 }, walls: { material: 'paper', colour: '#2f3b55', pattern: 'floral', colour2: '#c99b3b', scale: 0.45 } },
+    { name: 'Bathroom', r: [1.2, 0, 4, 3.5], floor: { material: 'stone', colour: '#ecebe8', colour2: '#9fa3a8', pattern: 'marble', scale: 0.8 }, walls: { material: 'ceramic', colour: '#a9c2ad', colour2: '#e6e1d8', pattern: 'tiles', scale: 0.15, roughness: 0.2 } }
+  ],
+  openings: [
+    ['door', 0.55, -3.5], // front door
+    ['window', -2.4, -3.5, 2.0], ['window', 4, -2.0, 1.2], ['window', -3.2, 3.5, 1.0], ['window', 3.5, 3.5, 0.6, 1.4],
+    ['opening', 1.2, -1.75, 2.2], ['door', -0.4, 0], ['door', 2.4, 0]
+  ],
+  props: [
+    // ── Lounge ──────────────────────────────────────────────────────────────
+    { id: 'rug', x: -2.4, z: -1.8, r: 90, s: { w: 2.4, d: 1.7 }, f: { rug: { colour: '#b5654a', colour2: '#e6d8bf', pattern: 'geometric', scale: 0.6 } } },
+    { id: 'media-unit', x: -3.7, z: -1.8, r: 90, s: { w: 1.6 } },
+    { id: 'tv', x: -3.75, z: -1.8, r: 90, o: { inches: '55' } },
+    { id: 'sofa', x: -1.1, z: -1.8, r: 270, o: { seats: 3, pillows: 2 }, f: { upholstery: { material: 'velvet', colour: '#1f5a46' }, cushions: { material: 'velvet', colour: '#1f5a46' }, pillows: { material: 'fabric', colour: '#d8cdb8', pattern: 'stripes', colour2: '#b0802c', scale: 0.12 } } },
+    { id: 'coffee-table', x: -2.3, z: -1.8, r: 90, o: { shape: 'round', base: 'pedestal' }, s: { w: 0.8, d: 0.8 }, f: { top: { material: 'wood', colour: '#5d4030', colour2: '#45301f' }, base: { material: 'wood', colour: '#5d4030', colour2: '#45301f' } } },
+    { id: 'armchair', x: -2.9, z: -3.0, r: 20, f: { upholstery: { material: 'leather', colour: '#8a4a26' }, cushion: { material: 'leather', colour: '#8a4a26' } } },
+    { id: 'side-table', x: -1.1, z: -3.1 },
+    { id: 'table-lamp', x: -1.1, z: -3.1, light: true },
+    { id: 'floor-lamp', x: -1.0, z: -0.4, o: { style: 'arc' }, r: 270 },
+    { id: 'bookshelf', x: -3.0, z: -0.25, r: 180, s: { w: 1.2 }, o: { books: 'some' } },
+    { id: 'floor-plant', x: -3.6, z: -3.1, o: { species: 'monstera' }, s: { h: 1.3 } },
+    { id: 'floor-plant', x: 0.8, z: -0.4, o: { species: 'fiddle' } },
+    { id: 'painting', x: -1.8, z: -0.05, e: 1.5, s: { w: 0.9, h: 0.7 }, f: { canvas: { pattern: 'marble', colour: '#e6d8bf', colour2: '#33456b', scale: 0.6 } } },
+    { id: 'curtains', x: -2.4, z: -3.4, s: { w: 2.4 }, f: { fabric: { colour: '#d8cdb8' } } },
+    { id: 'books', x: -2.4, z: -1.9 },
+    { id: 'flowers', x: -2.2, z: -1.65, o: { kind: 'tulips' }, f: { blooms: { colour: '#d2a3a0' } } },
+    { id: 'candles', x: -3.7, z: -2.5, r: 90 },
+    { id: 'vase', x: -3.7, z: -1.1, o: { shape: 'amphora' } },
+    { id: 'cushion', x: -2.9, z: -2.85, r: 20, s: { w: 0.4, h: 0.35 }, f: { cover: { colour: '#c99b3b' } } },
+    { id: 'pouf', x: -1.8, z: -0.8 },
+    // ── Kitchen ─────────────────────────────────────────────────────────────
+    { id: 'sink-unit', x: 1.8, z: -3.2, s: { w: 1.0 } },
+    { id: 'cooker', x: 2.6, z: -3.2 },
+    { id: 'base-cabinets', x: 3.5, z: -3.2, s: { w: 1.0 } },
+    { id: 'cooker-hood', x: 2.6, z: -3.45 },
+    { id: 'wall-cabinets', x: 1.65, z: -3.45, s: { w: 0.9 } },
+    { id: 'wall-cabinets', x: 3.5, z: -3.45, s: { w: 1.0 }, o: { glass: true } },
+    { id: 'fridge', x: 3.65, z: -0.45, r: 270 },
+    { id: 'dining-table', x: 2.5, z: -1.4, o: { shape: 'round', seats: 3, base: 'pedestal', chairStyle: 'spindle' }, s: { w: 0.9, d: 0.9 } },
+    { id: 'pendant', x: 2.5, z: -1.4, o: { shade: 'dome' }, light: true },
+    { id: 'fruit-bowl', x: 2.5, z: -1.4 },
+    { id: 'kettle', x: 3.3, z: -3.3 }, { id: 'toaster', x: 3.75, z: -3.3 },
+    { id: 'pots', x: 2.6, z: -3.25 },
+    { id: 'potted-plant', x: 1.5, z: -3.3, o: { kind: 'fern' }, s: { w: 0.22, h: 0.28 } },
+    { id: 'wall-clock', x: 3.95, z: -1.0 },
+    // ── Bedroom ─────────────────────────────────────────────────────────────
+    { id: 'rug', x: -1.5, z: 2.0, s: { w: 2.4, d: 2.2 }, f: { rug: { colour: '#d8cdb8', colour2: '#b9827f', pattern: 'check', scale: 0.5 } } },
+    { id: 'bed', x: -1.5, z: 2.45, r: 180, o: { size: 'queen', headboard: 'upholstered' }, f: { headboard: { material: 'velvet', colour: '#b0802c' }, throw: { colour: '#5e1f24', pattern: 'weave' } } },
+    { id: 'nightstand', x: -2.75, z: 3.2, r: 180 }, { id: 'nightstand', x: -0.25, z: 3.2, r: 180 },
+    { id: 'table-lamp', x: -2.75, z: 3.2, light: true }, { id: 'table-lamp', x: -0.25, z: 3.2 },
+    { id: 'books', x: -0.15, z: 3.1, o: { count: 3 } },
+    { id: 'wardrobe', x: -3.7, z: 1.3, r: 90, s: { w: 1.6 }, o: { doors: 2 } },
+    { id: 'bench', x: -1.5, z: 0.9 },
+    { id: 'armchair', x: 0.6, z: 2.1, r: 250, o: { arms: 'rolled' }, f: { upholstery: { material: 'fabric', colour: '#d8cdb8' }, cushion: { material: 'fabric', colour: '#d8cdb8' } } },
+    { id: 'floor-plant', x: 0.8, z: 3.1, o: { species: 'palm' }, s: { h: 1.3 } },
+    { id: 'painting', x: -1.5, z: 3.45, e: 1.45, s: { w: 1.2, h: 0.6 }, f: { canvas: { pattern: 'geometric', colour: '#efeae0', colour2: '#b5654a', scale: 0.4 } } },
+    { id: 'curtains', x: -3.2, z: 3.4, s: { w: 1.3 }, f: { fabric: { material: 'velvet', colour: '#5e1f24' } } },
+    { id: 'cushion', x: -1.9, z: 2.75, r: 180, f: { cover: { colour: '#b0802c' } } },
+    { id: 'cushion', x: -1.1, z: 2.75, r: 180, f: { cover: { material: 'fabric', colour: '#d8cdb8', pattern: 'check', colour2: '#5e1f24', scale: 0.15 } } },
+    { id: 'floor-mirror', x: 0.95, z: 0.9, r: 270 },
+    // ── Bathroom ────────────────────────────────────────────────────────────
+    { id: 'bathtub', x: 2.45, z: 3.1, r: 180, o: { style: 'freestanding' } },
+    { id: 'toilet', x: 3.65, z: 1.0, r: 270 },
+    { id: 'vanity', x: 1.5, z: 1.7, r: 90 },
+    { id: 'mirror-cabinet', x: 1.3, z: 1.7 },
+    { id: 'towel-rail', x: 3.9, z: 2.2 },
+    { id: 'bath-mat', x: 2.45, z: 2.3 },
+    { id: 'potted-plant', x: 1.5, z: 1.4, o: { kind: 'succulent' }, s: { w: 0.18, h: 0.2 } },
+    { id: 'candles', x: 3.4, z: 3.25 },
+    { id: 'hanging-plant', x: 3.5, z: 3.0 }
+  ],
+  cast: [{ name: 'Lena', x: -2.0, z: -1.2, r: 250, height: 1.7 }],
+  cameras: [
+    { name: 'Camera A', x: 3.3, z: -0.6, r: 256, height: 1.5, lens: 'aizu-35', subject: 0 },
+    { name: 'Camera B', x: 0.7, z: 0.4, r: 310, height: 1.55, lens: 'aizu-25', subject: 0 }
+  ]
+}
+
 function findWall(walls: Wall[], p: Pt): { wall: Wall; along: number } | null {
   for (const w of walls) {
     const pr = projectOnWall(w, p)
@@ -229,10 +337,11 @@ function prop(spec: P): PropItem | null {
   return { id: newId('prop'), kind: 'prop', name: spec.name ?? def.name, x: spec.x, z: spec.z, rotationY: spec.r ?? 0, height: 0, props }
 }
 
-export function buildDemoHouse(): void {
+// The house as a scene document (walls, rooms, openings, items) — not yet settled or lit.
+function houseDoc(spec: HouseSpec): { doc: object; built: Array<PropItem | null> } {
   const walls: Wall[] = []
   const rooms: RoomArea[] = []
-  ROOMS.forEach(({ name, r, floor, walls: wallFinish }) => {
+  spec.rooms.forEach(({ name, r, floor, walls: wallFinish }) => {
     const [x0, z0, x1, z1] = r
     const corners: Pt[] = [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }]
     corners.forEach((p, i) => uncoveredParts(p, corners[(i + 1) % 4], walls).forEach(([a, b]) => walls.push(makeWall(a, b))))
@@ -249,7 +358,7 @@ export function buildDemoHouse(): void {
     }
   })
   const openings: Opening[] = []
-  OPENINGS.forEach(([kind, x, z, width, sill]) => {
+  spec.openings.forEach(([kind, x, z, width, sill]) => {
     const hit = findWall(walls, { x, z })
     if (!hit) return
     const d = openingDefaults(kind)
@@ -259,28 +368,37 @@ export function buildDemoHouse(): void {
       hinge: 'left', swing: 'in', openAngle: kind === 'door' ? 70 : 0, openTo: 90
     })
   })
-  const built = PROPS.map(prop)
+  const built = spec.props.map(prop)
   const props = built.filter((p): p is PropItem => !!p)
-  const maya: SubjectItem = { id: newId('subject'), kind: 'subject', name: 'Maya', x: -2.2, z: -2.5, rotationY: 270, height: 1.68 }
-  const sam: SubjectItem = { id: newId('subject'), kind: 'subject', name: 'Sam', x: 3.4, z: -2.0, rotationY: 120, height: 1.82 }
-  const camA: CameraItem = { id: newId('camera'), kind: 'camera', name: 'Camera A', x: -5.8, z: -1.6, rotationY: 115, height: 1.45, props: cameraPropsFor(maya.id) }
-  const camB: CameraItem = { id: newId('camera'), kind: 'camera', name: 'Camera B', x: 6.2, z: -0.6, rotationY: 235, height: 1.6, props: cameraPropsFor(sam.id) }
-  camA.props.lensId = 'aizu-35'
-  camB.props.lensId = 'aizu-50'
-  const items: SceneItem[] = [...props, maya, sam, camA, camB]
-  loadScene(JSON.stringify({
+  const cast: SubjectItem[] = spec.cast.map(c => ({ id: newId('subject'), kind: 'subject', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height }))
+  const cams: CameraItem[] = spec.cameras.map(c => {
+    const cam: CameraItem = { id: newId('camera'), kind: 'camera', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height, props: cameraPropsFor(cast[c.subject]?.id ?? null) }
+    cam.props.lensId = c.lens
+    return cam
+  })
+  const items: SceneItem[] = [...props, ...cast, ...cams]
+  const doc = {
     walls, openings, rooms, items, marks: [], lineOfAction: null,
-    world: { ...defaultWorld(), preset: 'evening', percent: 100, kelvin: 3000 }, activeCameraId: camA.id
-  }), () => {
+    world: { ...defaultWorld(), preset: 'evening', percent: 100, kelvin: 3000 }, activeCameraId: cams[0]?.id ?? null
+  }
+  return { doc, built }
+}
+
+// Load a house into the editor as one undoable step.
+export function buildHouse(spec: HouseSpec): void {
+  const { doc, built } = houseDoc(spec)
+  loadScene(JSON.stringify(doc), () => {
     // Settle on walls and surfaces now the house exists, then light the practicals — all part of
     // the same undo step, so one Undo brings the previous scene back.
     settleProps(scene.items.filter(i => i.kind === 'prop').map(i => i.id), true)
-    PROPS.forEach((spec, i) => {
+    spec.props.forEach((p, i) => {
       const item = built[i]
-      if (spec.light && item) {
+      if (p.light && item) {
         const live = scene.items.find(x => x.id === item.id)
         if (live?.kind === 'prop') lightIt(live, false)
       }
     })
   })
 }
+
+export const buildDemoHouse = (): void => buildHouse(THREE_BED)

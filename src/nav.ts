@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
 // Which top-level view is showing, and where inside Setups the user is.
-export type AppView = 'plan' | 'live' | 'setups'
+export type AppView = 'plan' | 'live' | 'setups' | 'guide'
 export type SceneTab = 'setups' | 'storyboard'
 
 export const nav = reactive({

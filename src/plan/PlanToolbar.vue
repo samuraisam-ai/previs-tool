@@ -119,7 +119,8 @@ const SECTIONS: Array<{ title: string; items: MenuItem[] }> = [
     title: 'Set dressing',
     items: [
       { id: 'props', label: 'Props library…', hint: 'Furniture, decor, plants, practicals — by room', icon: 'sofa', key: 'J', add: 'props' },
-      { id: 'demo', label: 'Demo house', hint: 'A furnished 3-bedroom house to explore', icon: 'room', add: 'demo' }
+      { id: 'demo-1bed', label: 'Sample: 1-bedroom', hint: 'A furnished 1-bedroom apartment to explore', icon: 'room', add: 'demo:1bed' },
+      { id: 'demo-3bed', label: 'Sample: 3-bedroom', hint: 'A furnished 3-bedroom house to explore', icon: 'room', add: 'demo:3bed' }
     ]
   }
 ]

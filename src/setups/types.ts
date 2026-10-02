@@ -15,6 +15,8 @@ export interface Record {
 export interface Production extends Record {
   title: string
   sceneOrder: string[]
+  // Set on the built-in sample productions (see samples.ts), so missing ones can be restored.
+  sampleId?: string
 }
 
 export type Setting = 'INT' | 'EXT' | 'INT/EXT'

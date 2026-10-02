@@ -3,6 +3,7 @@
     <div class="head">
       <h2>Productions</h2>
       <div class="actions">
+        <button v-if="missing" :disabled="restoring" @click="restore">{{ restoring ? 'Restoring…' : 'Restore samples' }}</button>
         <button @click="importFile">Import…</button>
         <button class="primary" @click="creating = true">＋ New production</button>
       </div>
@@ -19,8 +20,8 @@
     </p>
 
     <div class="grid">
-      <button v-for="p in setups.productions" :key="p.id" class="card" @click="openSetups(p.id)">
-        <b>{{ p.title }}</b>
+      <button v-for="p in productions" :key="p.id" :class="['card', { sample: p.sampleId }]" @click="openSetups(p.id)">
+        <b>{{ p.title }}<em v-if="p.sampleId" class="badge">Sample</em></b>
         <span>{{ counts(p) }}</span>
         <small>Updated {{ when(p.updatedAt) }}</small>
       </button>
@@ -30,8 +31,9 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, nextTick, ref, watch } from 'vue'
+import { computed, defineComponent, nextTick, ref, watch } from 'vue'
 import { openSetups } from '../../nav'
+import { missingSamples, restoreSamples } from '../samples'
 import { createProduction, importProduction, scenesOf, setups } from '../store'
 import { Production } from '../types'
 import { when } from './format'
@@ -44,6 +46,15 @@ export default defineComponent({
     const error = ref('')
     const titleInput = ref<HTMLInputElement | null>(null)
     watch(creating, async on => { if (on) { await nextTick(); titleInput.value?.focus() } })
+
+    // Samples first: they're the way in for someone new.
+    const productions = computed(() => [...setups.productions].sort((a, b) => Number(!!b.sampleId) - Number(!!a.sampleId)))
+    const missing = computed(() => setups.ready && setups.available && missingSamples().length > 0)
+    const restoring = ref(false)
+    const restore = async () => {
+      restoring.value = true
+      try { await restoreSamples() } finally { restoring.value = false }
+    }
 
     const create = () => {
       const p = createProduction(title.value)
@@ -75,7 +86,7 @@ export default defineComponent({
       }
       input.click()
     }
-    return { setups, creating, title, titleInput, error, create, counts, when, openSetups, importFile }
+    return { setups, productions, missing, restoring, restore, creating, title, titleInput, error, create, counts, when, openSetups, importFile }
   }
 })
 </script>
@@ -87,6 +98,7 @@ export default defineComponent({
 .card b { font-size: 16px; }
 .card span { color: var(--text); font-size: 13px; }
 .card small { color: var(--muted); }
+.badge { margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: rgba(255, 181, 71, 0.15); color: var(--accent); font-size: 11px; font-style: normal; font-weight: 600; vertical-align: 2px; }
 .new { display: flex; gap: 8px; margin-bottom: 16px; }
 .new input { flex: 1; }
 </style>

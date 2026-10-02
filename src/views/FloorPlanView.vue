@@ -69,9 +69,12 @@
         <label class="check"><input type="checkbox" v-model="editor.snap.objects" /> Wall ends &amp; corners</label>
         <p class="readout">Hold Alt while dragging to place freely.</p>
         <WorldPanel />
-        <h4 class="section">Demo</h4>
-        <button class="demo" @click="loadDemo">Load demo house</button>
-        <p class="readout">A furnished 3-bedroom house (~150 props, practical lamps, two cameras) to explore. Undo (⌘Z) brings your scene back.</p>
+        <h4 class="section">Sample sets</h4>
+        <div class="demos">
+          <button class="demo" @click="loadDemo('1bed')">1-bedroom apartment</button>
+          <button class="demo" @click="loadDemo('3bed')">3-bedroom house</button>
+        </div>
+        <p class="readout">Furnished houses with lit practicals, a cast and two cameras to explore. They're also in Setups. Undo (⌘Z) brings your scene back.</p>
       </div>
     </aside>
   </div>
@@ -87,7 +90,7 @@ import PropLayer from '../plan/PropLayer.vue'
 import PropLibrary from '../props/PropLibrary.vue'
 import PropPanel from '../plan/panels/PropPanel.vue'
 import { addProp } from '../props/add'
-import { buildDemoHouse } from '../props/demoHouse'
+import { buildHouse, ONE_BED, THREE_BED } from '../props/demoHouse'
 import { settleProp, settleProps } from '../props/placement'
 import BlockingBar from '../plan/BlockingBar.vue'
 import { playback, stop as stopPlayback, togglePlay } from '../plan/blocking'
@@ -624,13 +627,13 @@ export default defineComponent({
       if (kind === 'light') { showProps.value = false; showLibrary.value = true }
       else if (kind === 'props') { showLibrary.value = false; showProps.value = true }
       else if (kind.startsWith('prop:')) addPropPicked(kind.slice(5))
-      else if (kind === 'demo') loadDemo()
+      else if (kind === 'demo:1bed' || kind === 'demo:3bed') loadDemo(kind.slice(5) as '1bed' | '3bed')
       else if (kind === 'subject' || kind === 'camera') add(kind)
     }
-    const loadDemo = () => {
+    const loadDemo = (which: '1bed' | '3bed') => {
       // No confirmation pop-up (some embedded browsers block them, which made the button do nothing):
       // it's a single undo step, so ⌘Z brings the previous scene straight back.
-      buildDemoHouse()
+      buildHouse(which === '1bed' ? ONE_BED : THREE_BED)
       clearSelection()
       fit()
     }
@@ -752,6 +755,8 @@ export default defineComponent({
 </script>
 
 <style scoped>
+.demos { display: flex; gap: 8px; }
+.demos .demo { flex: 1; }
 .plan { display: flex; width: 100%; height: 100%; }
 .canvas-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .canvas { flex: 1; width: 100%; min-height: 0; background: #15161a; user-select: none; touch-action: none; }

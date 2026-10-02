@@ -1,5 +1,5 @@
 <template>
-  <g class="props">
+  <g :class="['props', { dragging: editor.dragging }]">
     <g
       v-for="p in props"
       :key="p.id"
@@ -29,7 +29,10 @@
         />
         <polygon v-else :class="s.cls || 'body'" :points="s.pts.map(q => `${q[0]},${-q[1]}`).join(' ')" :style="fill(p, s)" />
       </template>
-      <text v-if="isSelected(p.id) || showLabels" class="label" :font-size="10 * px" text-anchor="middle" :dy="3 * px" :transform="`rotate(${-p.rotationY})`">{{ p.name }}</text>
+      <!-- One clean outline of the footprint (selected, or faint on hover) instead of re-stroking every part. -->
+      <circle v-if="p.round" class="outline" :r="Math.max(p.w, p.d) / 2" />
+      <rect v-else class="outline" :x="-p.w / 2" :y="-p.d / 2" :width="p.w" :height="p.d" />
+      <text v-if="isSelected(p.id) || showLabels" class="label" :font-size="10 * px" :stroke-width="3 * px" text-anchor="middle" :dy="3 * px" :transform="`rotate(${-p.rotationY})`">{{ p.name }}</text>
     </g>
   </g>
 </template>
@@ -43,7 +46,12 @@ import { PlanShape } from '../props/types'
 import { scene } from '../scene/store'
 import { PropItem } from '../scene/types'
 import { playback, posed } from './blocking'
-import { isSelected } from './editor'
+import { editor, isSelected } from './editor'
+
+// Round things (round tables, pots, plants) get a circular outline: their outer shape is a circle
+// filling the footprint.
+const isRound = (shapes: PlanShape[], w: number, d: number) =>
+  shapes.some(s => s.t === 'circle' && Math.abs(s.x) < 0.01 && Math.abs(s.z) < 0.01 && s.r * 2 >= Math.max(w, d) * 0.95)
 
 interface DrawnProp {
   id: string
@@ -54,6 +62,7 @@ interface DrawnProp {
   w: number
   d: number
   shapes: PlanShape[]
+  round: boolean
   colours: { [slot: string]: string }
   main: string
 }
@@ -78,7 +87,7 @@ export default defineComponent({
         const first = def?.slots[0]?.id
         return {
           id: item.id, name: item.name, x: item.x, z: item.z, rotationY: item.rotationY, w: item.props.w, d: item.props.d,
-          shapes, colours, main: (first && colours[first]) || '#8b8f99'
+          shapes, colours, round: isRound(shapes, item.props.w, item.props.d), main: (first && colours[first]) || '#8b8f99'
         }
       }))
     // Tinted with the prop's own colours so the plan reads like a coloured set plan.
@@ -88,7 +97,7 @@ export default defineComponent({
       if (!s.cls || s.cls === 'body') return { fill: c, fillOpacity: 0.55 }
       return {}
     }
-    return { props, fill, isSelected }
+    return { props, fill, isSelected, editor }
   }
 })
 </script>
@@ -100,6 +109,12 @@ export default defineComponent({
 .line { fill: none; stroke: rgba(230, 231, 234, 0.6); stroke-width: 0.75px; vector-effect: non-scaling-stroke; }
 .glass { fill: none; stroke: #7fb2ff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 .hidden { fill: none; stroke: rgba(230, 231, 234, 0.45); stroke-width: 1px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
-.prop.selected .body { stroke: var(--accent); stroke-width: 2px; }
-.label { fill: #e6e7ea; font-weight: 500; paint-order: stroke; stroke: rgba(15, 16, 19, 0.85); stroke-width: 3px; pointer-events: none; }
+.outline { fill: none; stroke: none; pointer-events: none; vector-effect: non-scaling-stroke; }
+.prop:hover .outline { stroke: rgba(255, 255, 255, 0.45); stroke-width: 1px; }
+.prop.selected .outline { stroke: var(--accent); stroke-width: 2px; fill: var(--accent); fill-opacity: 0.08; }
+/* While moving something, the rest of the set steps back so the moved item reads clearly. */
+.props.dragging .prop:not(.selected) { opacity: 0.45; }
+.label { fill: #e6e7ea; font-weight: 500; paint-order: stroke; stroke: rgba(15, 16, 19, 0.85); pointer-events: none; }
+/* (The halo width is set in screen pixels via px: a CSS "3px" here is 3 plan units — metres — and
+   painted a dark blob over the selected prop.) */
 </style>
