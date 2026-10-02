@@ -187,6 +187,7 @@ function drawLegend(g: CanvasRenderingContext2D, doc: SceneDoc, meta: CaptureMet
   const lights = doc.items.filter((i): i is LightItem => i.kind === 'light')
   const cameras = doc.items.filter((i): i is CameraItem => i.kind === 'camera')
   const subjects = doc.items.filter(i => i.kind === 'subject')
+  const props = doc.items.filter(i => i.kind === 'prop')
   if (lights.length) {
     section(`Lights (${lights.length})`)
     lights.forEach(l => entry(l.name, lightLine(l), toHex(lightColour(l.props.mode, l.props.cct, l.props.gm, l.props.hue, l.props.sat))))
@@ -204,6 +205,12 @@ function drawLegend(g: CanvasRenderingContext2D, doc: SceneDoc, meta: CaptureMet
     g.font = font(15)
     const text = Array.from(counts.entries()).map(([id, n]) => `${doc.items.find(i => i.id === id)?.name ?? 'Unknown'}: ${n} mark${n === 1 ? '' : 's'}`).join(' · ')
     y = wrapText(g, text, x, y, w, 20, 2)
+  }
+  if (props.length) {
+    section('Set dressing')
+    g.fillStyle = '#e6e7ea'
+    g.font = font(15)
+    y = wrapText(g, `${props.length} prop${props.length === 1 ? '' : 's'}`, x, y, w, 20, 1)
   }
   section('World light')
   g.fillStyle = '#e6e7ea'

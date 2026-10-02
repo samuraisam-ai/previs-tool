@@ -32,8 +32,9 @@ export class PropMaterials {
   ) {}
 
   // `fit`: the mesh has its own 0–1 UVs (artwork, screens) — images fill it rather than tile.
-  acquire(f: Finish, fit: boolean): PBRMaterial {
-    const key = JSON.stringify([f, fit])
+  // `glow`: a lit practical's shade — emissive in the bulb's colour, scaled by its dimmer.
+  acquire(f: Finish, fit: boolean, glow?: { colour: [number, number, number]; level: number }): PBRMaterial {
+    const key = JSON.stringify([f, fit, glow ?? null])
     const hit = this.materials.get(key)
     if (hit) { hit.users++; return hit.material }
     const m = this.surface(`prop-${this.materials.size}`)
@@ -66,6 +67,7 @@ export class PropMaterials {
       m.emissiveColor = hexToLinear(f.colour).scale(this.brightness)
       this.glow.add(m)
     }
+    if (glow) m.emissiveColor = new Color3(glow.colour[0], glow.colour[1], glow.colour[2]).scale(this.brightness * glow.level)
     // A mirror reads as a bright, glossy silver panel (true reflections would re-render the scene).
     if (f.material === 'mirror') {
       m.metallic = 0
@@ -94,8 +96,9 @@ export class PropMaterials {
     if (Math.abs(value - this.brightness) < 1e-6) return
     this.brightness = value
     this.materials.forEach(({ material }, key) => {
-      const f = JSON.parse(key)[0] as Finish
-      if (f.material === 'glow') material.emissiveColor = hexToLinear(f.colour).scale(value)
+      const [f, , glow] = JSON.parse(key) as [Finish, boolean, { colour: [number, number, number]; level: number } | null]
+      if (glow) material.emissiveColor = new Color3(glow.colour[0], glow.colour[1], glow.colour[2]).scale(value * glow.level)
+      else if (f.material === 'glow') material.emissiveColor = hexToLinear(f.colour).scale(value)
     })
   }
 

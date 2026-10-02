@@ -140,6 +140,8 @@ function deleteNow(ids: string[]): void {
     })
   })
   scene.walls.forEach(w => { if (set.has(w.id)) scene.openings.forEach(o => { if (o.wallId === w.id) set.add(o.id) }) })
+  // A lamp takes its practical bulb with it.
+  scene.items.forEach(i => { if (i.kind === 'light' && i.attachedTo && set.has(i.attachedTo)) set.add(i.id) })
   const keep = <T extends { id: string }>(list: T[]) => {
     for (let i = list.length - 1; i >= 0; i--) if (set.has(list[i].id)) list.splice(i, 1)
   }
@@ -148,6 +150,11 @@ function deleteNow(ids: string[]): void {
   keep(scene.rooms)
   scene.items.filter(i => set.has(i.id)).forEach(i => removeItem(i.id))
   setSelection(editor.selection.filter(id => !set.has(id)))
+}
+
+// Walls running along a room's outline.
+export function roomWalls(room: RoomArea): Wall[] {
+  return scene.walls.filter(w => onBoundary(w.a, room.points) && onBoundary(w.b, room.points))
 }
 
 // ── Selection geometry ────────────────────────────────────────────────────────
@@ -220,6 +227,9 @@ export interface TransformSession {
 }
 
 export function beginTransform(ids: string[]): TransformSession {
+  // Practical bulbs travel with their lamp.
+  const lamps = new Set(ids)
+  ids = [...ids, ...scene.items.filter(i => i.kind === 'light' && i.attachedTo && lamps.has(i.attachedTo) && !lamps.has(i.id)).map(i => i.id)]
   const session: TransformSession = {
     ids, walls: new Map(), rooms: new Map(), items: new Map(), openings: new Map(), stretchWalls: [], stretchRooms: []
   }

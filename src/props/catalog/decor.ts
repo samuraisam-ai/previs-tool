@@ -5,7 +5,7 @@ import { circle, rect } from './parts'
 
 export const framedPhoto: PropDef = {
   id: 'photo-frame', name: 'Photo frame', category: 'decor', rooms: ['bedroom', 'living', 'office', 'hallway'], keywords: ['picture', 'photo', 'frame'],
-  size: { w: 0.2, d: 0.12, h: 0.25 }, mount: 'surface', imageSlot: 'photo',
+  size: { w: 0.2, d: 0.12, h: 0.25 }, mount: 'surface', imageSlot: 'photo', fitImage: true,
   options: [{ id: 'stand', label: 'Standing (on a surface)', type: 'toggle', default: true }],
   slots: [{ id: 'frame', label: 'Frame', default: { material: 'metal', colour: '#c9a04f' } }, { id: 'photo', label: 'Photo', default: { material: 'paper', colour: '#8a9aa8', pattern: 'geometric', colour2: '#d9c9a8', scale: 0.2 } }],
   build(kit, { w, h, o }) {
@@ -20,7 +20,7 @@ export const framedPhoto: PropDef = {
 
 export const poster: PropDef = {
   id: 'poster', name: 'Poster / print', category: 'decor', rooms: ['bedroom', 'living', 'office', 'hallway', 'kitchen'], keywords: ['print', 'art', 'film poster'],
-  size: { w: 0.5, d: 0.012, h: 0.7 }, mount: 'wall', elevation: 1.2, imageSlot: 'print',
+  size: { w: 0.5, d: 0.012, h: 0.7 }, mount: 'wall', elevation: 1.2, imageSlot: 'print', fitImage: true,
   options: [{ id: 'frame', label: 'Frame', type: 'select', default: 'thin', choices: [{ value: 'thin', label: 'Thin frame' }, { value: 'clip', label: 'Clip frame' }, { value: 'none', label: 'Taped up' }] }],
   slots: [{ id: 'frame', label: 'Frame', default: { material: 'painted', colour: '#202022' } }, { id: 'print', label: 'Print', default: { material: 'paper', colour: '#e6d8bf', pattern: 'floral', colour2: '#b5654a', scale: 0.4 } }],
   build(kit, { w, d, h, o }) {

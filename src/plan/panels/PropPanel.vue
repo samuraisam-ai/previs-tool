@@ -36,6 +36,32 @@
       </div>
     </template>
 
+    <template v-if="def.imageSlot">
+      <h4 class="section">Picture</h4>
+      <div class="picture">
+        <img v-if="pictureUrl" :src="pictureUrl" alt="" />
+        <div class="pic-actions">
+          <button @click="choosePicture">{{ pictureUrl ? 'Replace image…' : 'Choose image…' }}</button>
+          <small>{{ def.fitImage ? 'The frame takes the image’s proportions (width kept).' : 'Shown on the screen / surface.' }}</small>
+        </div>
+      </div>
+    </template>
+
+    <template v-if="def.practical">
+      <h4 class="section">Practical</h4>
+      <div v-if="bulbs.length" class="practical">
+        <span class="lit">💡 {{ bulbs[0].props.fixtureId === 'litolite-5c' ? 'LitoLite 5C' : 'PavoBulb 10C' }} · {{ Math.round(bulbs[0].props.dimmer) }}% · {{ bulbs[0].props.cct }}K</span>
+        <div class="row-btns">
+          <button title="Edit the bulb's dimmer and colour in the light panel" @click="selectBulb">Adjust bulb…</button>
+          <button class="danger" @click="unlight(item)">Remove bulb</button>
+        </div>
+      </div>
+      <div v-else class="practical">
+        <button @click="lightIt(item)">💡 Light it</button>
+        <small>Adds a real Nanlite bulb inside the lamp that lights the scene and moves with it.</small>
+      </div>
+    </template>
+
     <h4 class="section">Finishes</h4>
     <div class="finishes">
       <FinishEditor
@@ -68,6 +94,9 @@ import { OptionValue } from '../../props/types'
 import { scene } from '../../scene/store'
 import { Finish, PropItem } from '../../scene/types'
 import { deleteIds, duplicateSelection } from '../ops'
+import { setSelection } from '../editor'
+import { imagePreview, uploadImage } from '../../props/finishTools'
+import { linkedLights, lightIt, syncPractical, unlight } from '../../props/practical'
 
 export default defineComponent({
   name: 'PropPanel',
@@ -80,7 +109,8 @@ export default defineComponent({
     const item = computed(() => items.value[0])
     const def = computed(() => (item.value ? getDef(item.value.props.catalogId) : undefined))
     const lock = ref(false)
-    const each = (fn: (p: PropItem) => void) => items.value.forEach(fn)
+    // Apply to every selected prop, keeping practical bulbs inside their lamps.
+    const each = (fn: (p: PropItem) => void) => items.value.forEach(p => { fn(p); syncPractical(p) })
     const num = (e: Event) => Number((e.target as HTMLInputElement).value)
 
     const setName = (e: Event) => { if (item.value) item.value.name = (e.target as HTMLInputElement).value.trim() || def.value?.name || 'Prop' }
@@ -111,9 +141,31 @@ export default defineComponent({
       const s = def.value?.slots.find(x => x.id === slot)
       if (s) setFinish(slot, makeFinish(s.default))
     }
+    // ── Picture (art, posters, photos, screens) ──────────────────────────
+    const pictureUrl = computed(() => {
+      const slot = def.value?.imageSlot
+      const f = slot && item.value ? finishOf(item.value, slot) : null
+      return f && f.pattern === 'image' ? imagePreview(f.imageId) : undefined
+    })
+    const choosePicture = async () => {
+      const slot = def.value?.imageSlot
+      if (!slot) return
+      const img = await uploadImage()
+      if (!img) return
+      each(p => {
+        const f = finishOf(p, slot)
+        p.props.finishes = { ...p.props.finishes, [slot]: { ...f, pattern: 'image', imageId: img.id, colour: '#ffffff' } }
+        if (def.value?.fitImage && img.w > 0) p.props.h = Math.round(p.props.w * (img.h / img.w) * 1000) / 1000
+      })
+    }
+
+    // ── Practical bulb ───────────────────────────────────────────────────
+    const bulbs = computed(() => (item.value ? linkedLights(item.value) : []))
+    const selectBulb = () => { if (bulbs.value[0]) setSelection([bulbs.value[0].id]) }
+
     const duplicate = () => duplicateSelection(props.ids)
     const remove = () => deleteIds(props.ids)
-    return { items, item, def, lock, heading, setName, setSize, setElevation, setHeading, optionValue, setOption, setFinish, resetFinish, finishOf, duplicate, remove }
+    return { pictureUrl, choosePicture, bulbs, selectBulb, lightIt, unlight, items, item, def, lock, heading, setName, setSize, setElevation, setHeading, optionValue, setOption, setFinish, resetFinish, finishOf, duplicate, remove }
   }
 })
 </script>
@@ -126,4 +178,10 @@ export default defineComponent({
 .options { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
 .options .check { flex-direction: row; align-items: center; gap: 6px; grid-column: span 2; }
 .finishes { display: flex; flex-direction: column; gap: 6px; }
+.picture { display: flex; gap: 10px; align-items: flex-start; }
+.picture img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.pic-actions, .practical { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.pic-actions small, .practical small { color: var(--muted); font-size: 11px; line-height: 1.4; }
+.lit { font-size: 13px; }
+.row-btns { display: flex; gap: 6px; }
 </style>

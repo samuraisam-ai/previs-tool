@@ -198,6 +198,27 @@ export function drawPattern(g: CanvasRenderingContext2D, S: number, pattern: Pat
       g.stroke()
       break
     }
+    case 'planks': {
+      // Six boards across the tile, staggered end joints, a little grain and tone variation.
+      const n = 6
+      const bw = S / n
+      for (let i = 0; i < n; i++) {
+        g.globalAlpha = 0.06 + rand() * 0.14
+        g.fillRect(i * bw, 0, bw, S)
+        g.globalAlpha = 0.18
+        g.lineWidth = 0.6
+        for (let k = 0; k < 4; k++) {
+          const x = i * bw + rand() * bw
+          g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (rand() - 0.5) * 4, S); g.stroke()
+        }
+        g.globalAlpha = 0.7
+        g.lineWidth = Math.max(1, S / 256)
+        g.beginPath(); g.moveTo(i * bw, 0); g.lineTo(i * bw, S); g.stroke()
+        const joint = ((i * 0.37) % 1) * S
+        g.beginPath(); g.moveTo(i * bw, joint); g.lineTo(i * bw + bw, joint); g.stroke()
+      }
+      break
+    }
     case 'rattan': {
       g.lineWidth = S / 40
       g.globalAlpha = 0.6

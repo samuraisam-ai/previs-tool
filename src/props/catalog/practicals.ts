@@ -6,6 +6,8 @@ import { circle, rect } from './parts'
 export const floorLamp: PropDef = {
   id: 'floor-lamp', name: 'Floor lamp', category: 'practicals', rooms: ['living', 'bedroom', 'office'], keywords: ['standard lamp', 'arc lamp', 'reading lamp'],
   size: { w: 0.45, d: 0.45, h: 1.6 }, mount: 'floor',
+  bulb: ({ w, h, o }) => (o.style === 'arc' ? [w * 0.55, h * 0.7, 0] : o.style === 'tripod' ? [0, h * 0.82, 0] : [0, h * 0.88, 0]),
+  practical: { fixture: 'pavobulb-10c', glowSlot: 'shade' },
   options: [{ id: 'style', label: 'Style', type: 'select', default: 'drum', choices: [{ value: 'drum', label: 'Drum shade' }, { value: 'arc', label: 'Arc' }, { value: 'tripod', label: 'Tripod' }] }],
   slots: [{ id: 'shade', label: 'Shade', default: { material: 'fabric', colour: '#f1eee8' } }, { id: 'stand', label: 'Stand', default: { material: 'metal', colour: '#2a2b2d' } }],
   build(kit, { w, h, o }) {
@@ -29,6 +31,7 @@ export const floorLamp: PropDef = {
 export const deskLamp: PropDef = {
   id: 'desk-lamp', name: 'Desk lamp', category: 'practicals', rooms: ['office', 'bedroom'], keywords: ['task lamp', 'anglepoise', 'banker lamp'],
   size: { w: 0.2, d: 0.35, h: 0.45 }, mount: 'surface', options: [],
+  bulb: ({ h }) => [0, h * 0.74, 0.12], practical: { fixture: 'litolite-5c', glowSlot: 'body' },
   slots: [{ id: 'body', label: 'Lamp', default: { material: 'painted', colour: '#2b2b2d', roughness: 0.35 } }],
   build(kit, { h }) {
     kit.cylinder('body', { d: 0.16, h: 0.025, sides: 20 }, [0, 0.0125, -0.08])
@@ -41,6 +44,7 @@ export const deskLamp: PropDef = {
 export const pendant: PropDef = {
   id: 'pendant', name: 'Pendant light', category: 'practicals', rooms: ['dining', 'kitchen', 'living', 'bedroom', 'hallway'], keywords: ['ceiling light', 'hanging lamp', 'chandelier'],
   size: { w: 0.4, d: 0.4, h: 0.8 }, mount: 'ceiling', elevation: 1.6,
+  bulb: ({ w, o }) => [0, o.shade === 'globe' ? w / 2 : w * 0.2, 0], practical: { fixture: 'pavobulb-10c', glowSlot: 'shade' },
   options: [{ id: 'shade', label: 'Shade', type: 'select', default: 'dome', choices: [{ value: 'dome', label: 'Dome' }, { value: 'globe', label: 'Globe' }, { value: 'cone', label: 'Cone' }, { value: 'drum', label: 'Drum' }] }],
   slots: [{ id: 'shade', label: 'Shade', default: { material: 'metal', colour: '#202022', roughness: 0.4 } }, { id: 'cord', label: 'Cord', default: { material: 'plastic', colour: '#202022' } }],
   build(kit, { w, h, o }) {
@@ -58,6 +62,7 @@ export const pendant: PropDef = {
 export const sconce: PropDef = {
   id: 'sconce', name: 'Wall sconce', category: 'practicals', rooms: ['bedroom', 'living', 'hallway', 'bathroom', 'dining'], keywords: ['wall light', 'wall lamp'],
   size: { w: 0.15, d: 0.2, h: 0.3 }, mount: 'wall', elevation: 1.6, options: [],
+  bulb: ({ d, h }) => [0, h * 0.68, d * 0.15], practical: { fixture: 'pavobulb-10c', glowSlot: 'shade' },
   slots: [{ id: 'shade', label: 'Shade', default: { material: 'glass', colour: '#f7f6f2', opacity: 0.7, roughness: 0.6 } }, { id: 'arm', label: 'Arm', default: { material: 'metal', colour: '#c9a04f' } }],
   build(kit, { w, d, h }) {
     kit.box('arm', [0.08, 0.14, 0.015], [0, h * 0.35, -d / 2 + 0.0075])
@@ -70,6 +75,7 @@ export const sconce: PropDef = {
 export const stringLights: PropDef = {
   id: 'string-lights', name: 'String lights', category: 'practicals', rooms: ['outdoor', 'bedroom', 'living'], keywords: ['fairy lights', 'festoon', 'bulbs'],
   size: { w: 3.0, d: 0.1, h: 0.4 }, mount: 'wall', elevation: 2.0,
+  bulb: ({ h }) => [0, h * 0.15, 0], practical: { fixture: 'pavobulb-10c', glowSlot: 'bulbs' },
   options: [{ id: 'bulbs', label: 'Bulbs', type: 'number', min: 4, max: 40, step: 1, default: 12 }, { id: 'lit', label: 'Lit', type: 'toggle', default: true }],
   slots: [{ id: 'bulbs', label: 'Bulbs', default: { material: 'glow', colour: '#ffd9a0' } }, { id: 'wire', label: 'Wire', default: { material: 'plastic', colour: '#202022' } }],
   build(kit, { w, h, o }) {

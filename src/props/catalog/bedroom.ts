@@ -287,6 +287,7 @@ export const rug: PropDef = {
 export const tableLamp: PropDef = {
   id: 'table-lamp', name: 'Table lamp', category: 'practicals', rooms: ['bedroom', 'living', 'office', 'hallway'], keywords: ['lamp', 'bedside lamp', 'practical'],
   size: { w: 0.36, d: 0.36, h: 0.58 }, mount: 'surface',
+  bulb: ({ h }) => [0, h - h * 0.38 * 0.55, 0], practical: { fixture: 'pavobulb-10c', glowSlot: 'shade' },
   options: [
     { id: 'base', label: 'Base', type: 'select', default: 'gourd', choices: [
       { value: 'gourd', label: 'Ceramic gourd' }, { value: 'column', label: 'Column' }, { value: 'stick', label: 'Metal stick' }] },
@@ -319,7 +320,7 @@ export const tableLamp: PropDef = {
 
 export const painting: PropDef = {
   id: 'painting', name: 'Painting / canvas', category: 'decor', rooms: ['bedroom', 'living', 'dining', 'hallway', 'office'], keywords: ['art', 'artwork', 'canvas', 'picture', 'print'],
-  size: { w: 0.9, d: 0.04, h: 0.65 }, mount: 'wall', elevation: 1.15, imageSlot: 'canvas',
+  size: { w: 0.9, d: 0.04, h: 0.65 }, mount: 'wall', elevation: 1.15, imageSlot: 'canvas', fitImage: true,
   options: [{ id: 'frame', label: 'Frame', type: 'select', default: 'thin', choices: [
     { value: 'thin', label: 'Thin frame' }, { value: 'gallery', label: 'Gallery (wide)' }, { value: 'float', label: 'Float frame' }, { value: 'none', label: 'Unframed canvas' }] }],
   slots: [

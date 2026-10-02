@@ -26,8 +26,8 @@ export function deletePreset(name: string): void {
   save()
 }
 
-// Pick an image, shrink it (≤ maxSize px on the long side) and store it; returns its id.
-export function uploadImage(maxSize = 1024): Promise<string | null> {
+// Pick an image, shrink it (≤ maxSize px on the long side) and store it; returns its id and size.
+export function uploadImage(maxSize = 1024): Promise<{ id: string; w: number; h: number } | null> {
   return new Promise(resolve => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -43,7 +43,7 @@ export function uploadImage(maxSize = 1024): Promise<string | null> {
         canvas.height = Math.max(1, Math.round(bitmap.height * s))
         ;(canvas.getContext('2d') as CanvasRenderingContext2D).drawImage(bitmap, 0, 0, canvas.width, canvas.height)
         const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.9))
-        resolve(blob ? await storage.putImage(blob) : null)
+        resolve(blob ? { id: await storage.putImage(blob), w: bitmap.width, h: bitmap.height } : null)
       } catch {
         resolve(null)
       }

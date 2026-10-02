@@ -127,8 +127,8 @@ export default defineComponent({
     }
     const setMaterial = (e: Event) => emit('update', changeMaterial(props.value, text(e) as MaterialKind))
     const pickImage = async () => {
-      const id = await uploadImage()
-      if (id) emitPatch({ pattern: 'image', imageId: id, colour: '#ffffff', scale: props.fit ? props.value.scale : 1 })
+      const img = await uploadImage()
+      if (img) emitPatch({ pattern: 'image', imageId: img.id, colour: '#ffffff', scale: props.fit ? props.value.scale : 1 })
     }
     const setPattern = (p: PatternKind) => {
       if (p === 'image' && !props.value.imageId) { pickImage(); return }

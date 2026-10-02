@@ -1,13 +1,14 @@
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial'
 import { Color3 } from '@babylonjs/core/Maths/math.color'
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh'
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer'
 import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
 import { Scene } from '@babylonjs/core/scene'
 import { same, triangulate, wallCuts, wallLength } from '../plan/geometry'
-import { FloorFinish, Opening, SceneDoc, Wall } from '../scene/types'
+import { Finish, FloorFinish, Opening, SceneDoc, Wall } from '../scene/types'
 
 // Builds the 3D architecture (walls with openings, doors, windows, floors, ceilings) from the plan.
 // Everything is simple boxes/polygons, rebuilt whenever the architecture changes.
@@ -32,6 +33,11 @@ const FINISHES: Record<FloorFinish, { color: Color3; roughness: number }> = {
 }
 
 type SurfaceFactory = (name: string, color: Color3, roughness: number) => PBRMaterial
+// Shared finish materials (paint, wallpaper, tiles…), reference-counted by the props layer.
+export interface FinishMaterials {
+  acquire(f: Finish, fit: boolean): PBRMaterial
+  release(m: PBRMaterial): void
+}
 
 interface Piece { x0: number; x1: number; y0: number; y1: number }
 
@@ -47,6 +53,9 @@ export class Architecture {
   private glassMaterial: PBRMaterial
   private groundMaterial: PBRMaterial
   private ground: Mesh
+
+  private finishes: FinishMaterials | null = null
+  private held: PBRMaterial[] = []
 
   constructor(private scene: Scene, surface: SurfaceFactory) {
     this.wallMaterial = surface('walls', new Color3(0.55, 0.55, 0.54), 0.85)
@@ -77,11 +86,26 @@ export class Architecture {
     return [this.wallMaterial, ...Object.values(this.floorMaterials), this.doorMaterial, this.frameMaterial]
   }
 
+  setFinishMaterials(f: FinishMaterials): void {
+    this.finishes = f
+  }
+
+  // A material for a set-dressing finish; held until the next rebuild.
+  private finish(f: Finish | undefined, fallback: PBRMaterial): PBRMaterial {
+    if (!f || !this.finishes) return fallback
+    const m = this.finishes.acquire(f, false)
+    this.held.push(m)
+    return m
+  }
+
   // Rebuild if the architecture changed. Returns true when meshes were replaced.
   sync(doc: SceneDoc): boolean {
     const key = JSON.stringify([doc.walls, doc.openings, doc.rooms])
     if (key === this.key) return false
     this.key = key
+    // New finish materials are acquired before the old ones are released (no needless rebuilds).
+    const previous = this.held
+    this.held = []
     this.root?.dispose(false, false)
     this.casters = []
     this.root = new TransformNode('architecture', this.scene)
@@ -89,9 +113,10 @@ export class Architecture {
     this.mergeBoxes()
     doc.rooms.forEach(r => {
       if (r.points.length < 3) return
-      this.buildPolygon(`floor-${r.id}`, r.points, 0.002, true, this.floorMaterials[r.floor], LAYER.COMMON)
-      if (r.ceiling) this.buildPolygon(`ceiling-${r.id}`, r.points, r.ceilingHeight, false, this.ceilingMaterial, LAYER.CEILING)
+      this.buildPolygon(`floor-${r.id}`, r.points, 0.002, true, this.finish(r.floorFinish, this.floorMaterials[r.floor]), LAYER.COMMON)
+      if (r.ceiling) this.buildPolygon(`ceiling-${r.id}`, r.points, r.ceilingHeight, false, this.finish(r.ceilingFinish, this.ceilingMaterial), LAYER.CEILING)
     })
+    previous.forEach(m => this.finishes?.release(m))
     return true
   }
 
@@ -162,10 +187,13 @@ export class Architecture {
     })
     if (L + extB > cursor + 0.001) pieces.push({ x0: cursor, x1: L + extB, y0: 0, y1: H })
 
+    const wallMat = this.finish(w.finish, this.wallMaterial)
     const box = (p: Piece, name: string, mask: number, caster: boolean) => {
       const m = MeshBuilder.CreateBox(name, { width: p.x1 - p.x0, height: p.y1 - p.y0, depth: t }, this.scene)
       m.position.set((p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2, 0)
-      m.material = this.wallMaterial
+      // Wall-local metres as UVs: wallpaper, tiles and brick run continuously along the wall.
+      if (w.finish) { m.bakeCurrentTransformIntoVertices(); metreUVs(m) }
+      m.material = wallMat
       this.mesh(m, node, mask, caster)
     }
     pieces.forEach((p, i) => {
@@ -244,9 +272,26 @@ export class Architecture {
     data.positions = positions
     data.indices = indices
     data.normals = normals
+    // Plan metres as UVs, so floor planks and tiles are true to scale.
+    data.uvs = points.flatMap(p => [p.x, p.z])
     const mesh = new Mesh(name, this.scene)
     data.applyToMesh(mesh)
     mesh.material = material
     this.mesh(mesh, this.root as TransformNode, mask, false)
   }
+}
+
+// UVs from the dominant normal axis, in metres (mesh-local).
+function metreUVs(mesh: Mesh): void {
+  const pos = mesh.getVerticesData(VertexBuffer.PositionKind)
+  const nor = mesh.getVerticesData(VertexBuffer.NormalKind)
+  if (!pos || !nor) return
+  const uv = new Float32Array((pos.length / 3) * 2)
+  for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) {
+    const ax = Math.abs(nor[i])
+    const ay = Math.abs(nor[i + 1])
+    const az = Math.abs(nor[i + 2])
+    if (ay >= ax && ay >= az) { uv[j] = pos[i]; uv[j + 1] = pos[i + 2] } else if (ax >= az) { uv[j] = pos[i + 2]; uv[j + 1] = pos[i + 1] } else { uv[j] = pos[i]; uv[j + 1] = pos[i + 1] }
+  }
+  mesh.setVerticesData(VertexBuffer.UVKind, uv, false)
 }

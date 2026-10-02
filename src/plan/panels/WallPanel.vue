@@ -48,6 +48,10 @@
       </div>
       <div v-if="attachMessage" class="readout">{{ attachMessage }}</div>
     </div>
+    <div class="field">
+      <span class="caption">Finish (paint, wallpaper, tile, brick…)</span>
+      <FinishEditor :value="wall.finish || PLAIN_WALL" label="Wall" @update="setFinish" @reset="setFinish(null)" />
+    </div>
     <div class="actions">
       <button @click="addHere('door')">+ Door here</button>
       <button @click="addHere('window')">+ Window here</button>
@@ -63,13 +67,15 @@
 <script lang="ts">
 import { computed, defineComponent, ref } from 'vue'
 import AngleWheel from '../../components/controls/AngleWheel.vue'
-import { OpeningKind } from '../../scene/types'
+import { Finish, OpeningKind } from '../../scene/types'
+import FinishEditor from '../../props/FinishEditor.vue'
+import { PLAIN_WALL } from '../../props/finish'
 import { wallAngle, wallLength } from '../geometry'
 import { addOpening, attachCorner, cornerLinks, deleteIds, detachCorner, duplicateSelection, getWall, setWallAngle, setWallLength, setWallStart } from '../ops'
 
 export default defineComponent({
   name: 'WallPanel',
-  components: { AngleWheel },
+  components: { AngleWheel, FinishEditor },
   props: {
     id: { type: String, required: true }
   },
@@ -86,6 +92,7 @@ export default defineComponent({
     const setCompass = (deg: number) => { if (wall.value) setWallAngle(wall.value, 90 - deg) }
     const addHere = (kind: OpeningKind) => { if (wall.value) addOpening(kind, wall.value.id, length.value / 2) }
     const remove = () => deleteIds([props.id])
+    const setFinish = (f: Finish | null) => { if (wall.value) wall.value.finish = f ? { ...f } : undefined }
 
     // ── Corner links ─────────────────────────────────────────────────────
     const attachMessage = ref('')
@@ -108,7 +115,7 @@ export default defineComponent({
     }
     const duplicate = () => duplicateSelection([props.id])
 
-    return { wall, length, anchor, compass, setLength, setThickness, setStart, setCompass, addHere, remove, duplicate, corners, detach, attach, attachMessage }
+    return { wall, length, anchor, compass, setLength, setThickness, setStart, setCompass, addHere, remove, duplicate, corners, detach, attach, attachMessage, setFinish, PLAIN_WALL }
   }
 })
 </script>.corner { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }

@@ -167,6 +167,8 @@ export class LiveScene {
       () => this.requestRender(),
       LAYER.COMMON
     )
+    // Walls, floors and ceilings use the same finish materials as props.
+    this.architecture.setFinishMaterials(this.propsLayer.materials)
     this.applyLayers()
     // Slightly glossy skin gives the polarizer something to cut (floors have per-finish sheen).
     this.subjectMaterial = this.createSurface('subject', new Color3(0.72, 0.58, 0.48), 0.55)
@@ -508,7 +510,15 @@ export class LiveScene {
       this.ambient.diffuse = new Color3(mix(0), mix(1), mix(2))
       this.ambient.groundColor = this.ambient.diffuse.scale(0.8)
     }
-    const propsChanged = this.propsLayer.sync(doc.items.filter((i): i is PropItem => i.kind === 'prop'))
+    // Lamps with a lit practical bulb glow in the bulb's colour, by its dimmer.
+    const bulbs = new Map<string, LightItem>()
+    doc.items.forEach(i => { if (i.kind === 'light' && i.attachedTo) bulbs.set(i.attachedTo, i) })
+    const propsChanged = this.propsLayer.sync(doc.items.filter((i): i is PropItem => i.kind === 'prop'), id => {
+      const bulb = bulbs.get(id)
+      if (!bulb || bulb.props.dimmer <= 0) return null
+      const c = lightColour(bulb.props.mode, bulb.props.cct, bulb.props.gm, bulb.props.hue, bulb.props.sat)
+      return { colour: [+c[0].toFixed(3), +c[1].toFixed(3), +c[2].toFixed(3)], level: Math.round(bulb.props.dimmer) / 100 * 1.6 }
+    })
     this.propsLayer.materials.setBrightness((0.8 * key) / Math.PI)
     if (propsChanged) this.requestRender()
     if (rebuilt || subjectsChanged || propsChanged) this.pool.refreshShadows(this.shadowCasters())

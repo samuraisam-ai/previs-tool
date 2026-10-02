@@ -66,7 +66,12 @@ interface BaseItem {
 }
 
 export interface SubjectItem extends BaseItem { kind: 'subject' }
-export interface LightItem extends BaseItem { kind: 'light'; props: LightProps }
+export interface LightItem extends BaseItem {
+  kind: 'light'
+  props: LightProps
+  // A practical: the prop (lamp) this bulb belongs to. It moves and is deleted with it.
+  attachedTo?: string
+}
 export interface CameraItem extends BaseItem { kind: 'camera'; props: CameraProps }
 export interface PropItem extends BaseItem { kind: 'prop'; props: PropProps }
 
@@ -78,7 +83,7 @@ export type MaterialKind =
   | 'glass' | 'mirror' | 'ceramic' | 'plastic' | 'rattan' | 'paper' | 'plant' | 'glow'
 export type PatternKind =
   | 'none' | 'grain' | 'weave' | 'boucle' | 'stripes' | 'check' | 'herringbone' | 'chevron'
-  | 'polka' | 'floral' | 'geometric' | 'marble' | 'terrazzo' | 'tiles' | 'brick' | 'rattan' | 'image'
+  | 'polka' | 'floral' | 'geometric' | 'marble' | 'terrazzo' | 'tiles' | 'brick' | 'rattan' | 'planks' | 'image'
 
 // How one part of a prop looks. Every field is editable in the prop panel.
 export interface Finish {
@@ -118,6 +123,8 @@ export interface Wall {
   height: number
   // Ends unlinked from the corner they touch: they no longer drag (or get dragged by) other walls.
   detached?: { a?: boolean; b?: boolean }
+  // Paint, wallpaper, tiles, brick… (both faces). Unset = plain walls.
+  finish?: Finish
 }
 
 export type OpeningKind = 'door' | 'double-door' | 'sliding-door' | 'opening' | 'window'
@@ -146,6 +153,9 @@ export interface RoomArea {
   floor: FloorFinish
   ceiling: boolean
   ceilingHeight: number
+  // Full finishes (set dressing). Unset = the plain `floor` preset / a plain ceiling.
+  floorFinish?: Finish
+  ceilingFinish?: Finish
 }
 
 export interface SceneDoc {

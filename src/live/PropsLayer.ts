@@ -14,6 +14,8 @@ import { PropMaterials } from './propMaterials'
 
 const DEG = Math.PI / 180
 
+export interface Glow { colour: [number, number, number]; level: number }
+
 interface Built {
   shapeKey: string
   node: TransformNode
@@ -38,17 +40,19 @@ export class PropsLayer {
   }
 
   // Returns true when anything changed (shadows and depth need refreshing).
-  sync(props: PropItem[]): boolean {
+  // `glowFor` gives a lit practical's shade glow (bulb colour, level), or null.
+  sync(props: PropItem[], glowFor: (id: string) => Glow | null = () => null): boolean {
     let changed = false
     const seen = new Set<string>()
     props.forEach(item => {
       seen.add(item.id)
       const { x, z, rotationY, props: p } = item
-      const shapeKey = JSON.stringify([p.catalogId, p.w, p.d, p.h, p.options, p.finishes])
+      const glow = glowFor(item.id)
+      const shapeKey = JSON.stringify([p.catalogId, p.w, p.d, p.h, p.options, p.finishes, glow])
       let b = this.built.get(item.id)
       if (!b || b.shapeKey !== shapeKey) {
         if (b) this.remove(item.id)
-        b = this.build(item, shapeKey)
+        b = this.build(item, shapeKey, glow)
         this.built.set(item.id, b)
         changed = true
       }
@@ -65,7 +69,7 @@ export class PropsLayer {
     return changed
   }
 
-  private build(item: PropItem, shapeKey: string): Built {
+  private build(item: PropItem, shapeKey: string, glow: Glow | null): Built {
     const node = new TransformNode(item.id, this.scene)
     node.parent = this.root
     const def = getDef(item.props.catalogId)
@@ -78,7 +82,8 @@ export class PropsLayer {
         console.warn(`Prop ${def.id} failed to build`, e)
       }
       kit.finish(item.id).forEach(part => {
-        const material = this.materials.acquire(finishOf(item, part.slot), part.fit)
+        const lit = glow && def.practical?.glowSlot === part.slot ? glow : undefined
+        const material = this.materials.acquire(finishOf(item, part.slot), part.fit, lit)
         part.mesh.material = material
         part.mesh.parent = node
         part.mesh.isPickable = false

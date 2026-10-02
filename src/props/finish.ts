@@ -119,7 +119,7 @@ export const PATTERNS: Array<{ id: PatternKind; label: string }> = [
   { id: 'herringbone', label: 'Herringbone' }, { id: 'chevron', label: 'Chevron' }, { id: 'polka', label: 'Polka dot' },
   { id: 'floral', label: 'Floral' }, { id: 'geometric', label: 'Geometric' }, { id: 'marble', label: 'Marble' },
   { id: 'terrazzo', label: 'Terrazzo' }, { id: 'tiles', label: 'Tiles' }, { id: 'brick', label: 'Brick' },
-  { id: 'rattan', label: 'Rattan weave' }, { id: 'image', label: 'My image…' }
+  { id: 'rattan', label: 'Rattan weave' }, { id: 'planks', label: 'Planks' }, { id: 'image', label: 'My image…' }
 ]
 
 // A complete finish for a material, with anything given overriding the material's defaults.
@@ -154,3 +154,13 @@ export function shade(hex: string, amount: number): string {
   }
   return '#' + [16, 8, 0].map(s => ch(s).toString(16).padStart(2, '0')).join('')
 }
+
+// Finishes for the plain floor presets, so a room's floor can be opened up in the finish editor.
+export const FLOOR_PRESETS: Record<'wood' | 'tile' | 'concrete' | 'carpet', Finish> = {
+  wood: makeFinish({ material: 'wood', colour: '#8a5a3a', colour2: '#6e4429', pattern: 'planks', scale: 1.1 }),
+  tile: makeFinish({ material: 'ceramic', colour: '#d9d6cf', colour2: '#9a958c', pattern: 'tiles', scale: 0.6, roughness: 0.3 }),
+  concrete: makeFinish({ material: 'concrete', colour: '#6b6a67' }),
+  carpet: makeFinish({ material: 'fabric', colour: '#4d4741', pattern: 'weave', scale: 0.05 })
+}
+export const PLAIN_WALL: Finish = makeFinish({ material: 'painted', colour: '#c9c8c4', roughness: 0.85 })
+export const PLAIN_CEILING: Finish = makeFinish({ material: 'painted', colour: '#d7d6d2', roughness: 0.9 })

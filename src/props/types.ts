@@ -113,6 +113,11 @@ export interface PropDef {
   sizeFor?: (o: { [id: string]: OptionValue }, current: { w: number; d: number; h: number }, changed?: string) => { w: number; d: number; h: number } | null
   // Slot that can show the user's own picture (paintings, posters, frames, screens).
   imageSlot?: string
+  // Resize the prop to the picture's proportions when one is chosen (art, posters, photos).
+  fitImage?: boolean
+  // Practical lamps: where the bulb sits (prop-local), the fixture to use, and the slot that glows.
+  bulb?: (p: PropParams) => V3
+  practical?: { fixture: string; glowSlot: string }
   build(kit: Kit, p: PropParams): void
   plan(p: PropParams): PlanShape[]
 }

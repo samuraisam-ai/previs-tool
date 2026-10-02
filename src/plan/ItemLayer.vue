@@ -4,8 +4,9 @@
       v-for="item in items"
       :key="item.id"
       :transform="`translate(${item.x} ${-item.z})`"
-      :class="['item', item.kind, { selected: isSelected(item.id) }]"
-      :data-id="item.id"
+      :class="['item', item.kind, { selected: isSelected(item.id), practical: isPractical(item) }]"
+      :data-id="isPractical(item) ? undefined : item.id"
+      :pointer-events="isPractical(item) ? 'none' : undefined"
     >
       <g :transform="`rotate(${item.rotationY})`">
         <template v-if="item.kind === 'light'">
@@ -44,7 +45,7 @@
           <circle cy="-0.66" :r="7 * px" data-handle="aim" :data-for="item.id" />
         </g>
       </g>
-      <text class="label" :y="0.3 + 12 * px" :font-size="11 * px" text-anchor="middle" pointer-events="none">
+      <text v-if="!isPractical(item)" class="label" :y="0.3 + 12 * px" :font-size="11 * px" text-anchor="middle" pointer-events="none">
         {{ item.name }}{{ item.kind === 'camera' ? ` · ${camViews[item.id].lensMm}mm` : '' }}
       </text>
       <text v-if="(item.kind === 'camera' || item.kind === 'light') && item.props.tilt" class="tilt-label" :y="0.3 + 25 * px" :font-size="10 * px" text-anchor="middle" pointer-events="none">
@@ -196,7 +197,9 @@ export default defineComponent({
       return result
     })
 
-    return { items, single, camViews, visuals, wedge, isSelected, crossesLine }
+    // A lamp's bulb is part of the lamp on the plan: clicks go through to the lamp.
+    const isPractical = (item: { kind: string; attachedTo?: string }) => item.kind === 'light' && !!item.attachedTo
+    return { items, single, camViews, visuals, wedge, isSelected, crossesLine, isPractical }
   }
 })
 </script>
@@ -222,4 +225,6 @@ export default defineComponent({
 .camera .fov { fill: rgba(120, 170, 255, 0.07); stroke: rgba(120, 170, 255, 0.6); stroke-width: 0.015; stroke-dasharray: 0.08 0.06; }
 .rotate-handle line { stroke: var(--accent); stroke-width: 0.02; }
 .rotate-handle circle { fill: var(--accent); cursor: crosshair; }
+.item.practical .fixture { transform: scale(0.45); opacity: 0.85; }
+.item.practical .beam { opacity: 0.5; }
 </style>

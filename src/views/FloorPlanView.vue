@@ -84,6 +84,7 @@ import PropLayer from '../plan/PropLayer.vue'
 import PropLibrary from '../props/PropLibrary.vue'
 import PropPanel from '../plan/panels/PropPanel.vue'
 import { addProp } from '../props/add'
+import { settleProp, settleProps } from '../props/placement'
 import BlockingBar from '../plan/BlockingBar.vue'
 import { playback, stop as stopPlayback, togglePlay } from '../plan/blocking'
 import { addMark, canHaveMarks, deleteMark, headingTo, setMarkHeading, setMarkPosition } from '../plan/marks'
@@ -476,6 +477,8 @@ export default defineComponent({
           const delta = snapDelta(g.session, raw, free)
           applyTransform(g.session, translate(delta))
           slideOpenings(g.session, delta)
+          // Wall art snaps to walls, lamps and vases sit on tables (Alt = place freely).
+          if (!free) settleProps(g.ids)
           editor.hud = { at: p, text: `Δ ${delta.x.toFixed(2)}, ${delta.z.toFixed(2)} m` }
           break
         }
@@ -623,7 +626,9 @@ export default defineComponent({
     const showProps = ref(false)
     const addPropPicked = (defId: string) => {
       const prop = addProp(defId)
-      if (prop) placeInView(prop)
+      if (!prop) return
+      placeInView(prop)
+      settleProp(prop, true)
     }
     const addLight = (fixtureId: string) => {
       placeInView(addItem('light', fixtureId))

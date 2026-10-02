@@ -5,13 +5,18 @@
       <label>Name <input v-model="room.name" /></label>
       <div class="readout">Area {{ area }} m² · includes its walls and anything inside when moved, rotated or resized</div>
       <label>Floor
-        <select v-model="room.floor">
+        <select :value="room.floor" @change="setFloorPreset(($event.target as HTMLSelectElement).value)">
           <option value="wood">Wood</option>
           <option value="tile">Tile</option>
           <option value="concrete">Concrete</option>
           <option value="carpet">Carpet</option>
         </select>
       </label>
+      <div class="surfaces">
+        <FinishEditor :value="room.floorFinish || FLOOR_PRESETS[room.floor]" label="Floor finish" @update="room.floorFinish = { ...$event }" @reset="room.floorFinish = undefined" />
+        <FinishEditor :value="roomWallFinish" label="Walls of this room" @update="setRoomWalls($event)" @reset="setRoomWalls(null)" />
+        <FinishEditor v-if="room.ceiling" :value="room.ceilingFinish || PLAIN_CEILING" label="Ceiling" @update="room.ceilingFinish = { ...$event }" @reset="room.ceilingFinish = undefined" />
+      </div>
       <div class="row2">
         <label class="check"><input type="checkbox" v-model="room.ceiling" /> Ceiling</label>
         <label v-if="room.ceiling">Ceiling (m)
@@ -62,19 +67,30 @@
 
 <script lang="ts">
 import { computed, defineComponent, PropType } from 'vue'
+import FinishEditor from '../../props/FinishEditor.vue'
+import { FLOOR_PRESETS, PLAIN_CEILING, PLAIN_WALL } from '../../props/finish'
+import { Finish, FloorFinish } from '../../scene/types'
 import AngleWheel from '../../components/controls/AngleWheel.vue'
 import { scene } from '../../scene/store'
 import { polygonArea } from '../geometry'
-import { deleteIds, duplicateSelection, expandSelection, getEntity, nudgeSelection, resizeSelection, rotateSelection, selectionBounds } from '../ops'
+import { deleteIds, duplicateSelection, expandSelection, getEntity, nudgeSelection, resizeSelection, roomWalls, rotateSelection, selectionBounds } from '../ops'
 
 export default defineComponent({
   name: 'SelectionPanel',
-  components: { AngleWheel },
+  components: { AngleWheel, FinishEditor },
   props: {
     ids: { type: Array as PropType<string[]>, required: true }
   },
   setup(props) {
     const room = computed(() => (props.ids.length === 1 ? scene.rooms.find(r => r.id === props.ids[0]) : undefined))
+    // Room surfaces: floor preset (plain) or a full finish; walls along the room's outline.
+    const setFloorPreset = (v: string) => {
+      if (!room.value) return
+      room.value.floor = v as FloorFinish
+      room.value.floorFinish = undefined
+    }
+    const roomWallFinish = computed(() => (room.value ? roomWalls(room.value).find(w => w.finish)?.finish : undefined) ?? PLAIN_WALL)
+    const setRoomWalls = (f: Finish | null) => { if (room.value) roomWalls(room.value).forEach(w => { w.finish = f ? { ...f } : undefined }) }
     const area = computed(() => (room.value ? Math.abs(polygonArea(room.value.points)).toFixed(2) : ''))
     // Rooms carry their walls and contents.
     const targets = computed(() => expandSelection(props.ids))
@@ -101,7 +117,7 @@ export default defineComponent({
     const duplicate = () => duplicateSelection(props.ids)
     const remove = () => deleteIds(props.ids)
 
-    return { room, area, size, summary, resize, moveTo, turn, duplicate, remove }
+    return { setFloorPreset, roomWallFinish, setRoomWalls, FLOOR_PRESETS, PLAIN_CEILING, room, area, size, summary, resize, moveTo, turn, duplicate, remove }
   }
 })
 </script>
