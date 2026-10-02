@@ -628,7 +628,8 @@ export default defineComponent({
       else if (kind === 'subject' || kind === 'camera') add(kind)
     }
     const loadDemo = () => {
-      if (!window.confirm('Replace the current scene with the furnished demo house? Undo (⌘Z) brings your scene back.')) return
+      // No confirmation pop-up (some embedded browsers block them, which made the button do nothing):
+      // it's a single undo step, so ⌘Z brings the previous scene straight back.
       buildDemoHouse()
       clearSelection()
       fit()
