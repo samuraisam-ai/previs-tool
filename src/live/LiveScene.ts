@@ -230,13 +230,24 @@ export class LiveScene {
   // on the scene image already in the first pass's input — about 12 ms instead of a full redraw.
   private reprocess(): void {
     const cam = this.scene.activeCamera
-    const passes = cam?._postProcesses?.filter(p => p) ?? []
-    if (!cam || !passes.length || !this.hasFrame) {
+    // A camera's pass list keeps empty slots after a pipeline is swapped (camera change, Performance
+    // level); hand Babylon only the live passes, and redraw normally if any isn't ready yet.
+    const passes = (cam?._postProcesses?.filter(p => p) ?? []) as NonNullable<NonNullable<typeof cam>['_postProcesses'][number]>[]
+    if (!cam || !passes.length || !this.hasFrame || passes.some(p => !p.isReady())) {
       this.scene.render()
       return
     }
     this.engine.beginFrame()
-    this.scene.postProcessManager._finalizeFrame(false, undefined, undefined, cam._postProcesses as never)
+    try {
+      this.scene.postProcessManager._finalizeFrame(false, undefined, undefined, passes as never)
+    } catch (e) {
+      // Never let a stale pass take the app down: fall back to a full frame.
+      console.warn('Re-process failed; redrawing', e)
+      this.engine.endFrame()
+      this.hasFrame = false
+      this.scene.render()
+      return
+    }
     this.engine.endFrame()
   }
 
