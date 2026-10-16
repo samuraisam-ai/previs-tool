@@ -7,7 +7,10 @@
         <button :class="{ on: nav.view === 'live' }" @click="nav.view = 'live'">Live View</button>
         <button :class="{ on: nav.view === 'setups' }" @click="nav.view = 'setups'">Setups</button>
       </nav>
-      <button :class="['guide-btn', { on: nav.view === 'guide' }]" title="User guide" @click="nav.view = 'guide'">? Guide</button>
+      <div class="header-actions">
+        <a class="feedback-btn" :href="FEEDBACK_URL" target="_blank" rel="noopener" title="Share feedback">Feedback</a>
+        <button :class="['guide-btn', { on: nav.view === 'guide' }]" title="User guide" @click="nav.view = 'guide'">? Guide</button>
+      </div>
     </header>
     <main>
       <!-- Both views stay mounted so the Babylon engine is created once. -->
@@ -18,6 +21,7 @@
     </main>
     <CaptureDialog v-if="captureState.request" :key="captureState.request.previewUrl" :request="captureState.request" />
     <CaptureToast />
+    <MobileNotice />
   </div>
 </template>
 
@@ -25,6 +29,8 @@
 import { defineComponent } from 'vue'
 import { nav } from './nav'
 import { captureState } from './setups/capture'
+import { FEEDBACK_URL } from './feedback'
+import MobileNotice from './components/MobileNotice.vue'
 import CaptureDialog from './setups/components/CaptureDialog.vue'
 import CaptureToast from './setups/components/CaptureToast.vue'
 import { ensureSamples } from './setups/samples'
@@ -42,11 +48,12 @@ export default defineComponent({
     SetupsView,
     GuideView,
     CaptureDialog,
-    CaptureToast
+    CaptureToast,
+    MobileNotice
   },
   setup() {
     initSetups().then(ensureSamples)
-    return { nav, captureState }
+    return { nav, captureState, FEEDBACK_URL }
   }
 })
 </script>
@@ -100,7 +107,13 @@ header {
 }
 header .brand { white-space: nowrap; }
 header .brand span { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
-@media (max-width: 640px) { header .brand span { display: none; } }
+@media (max-width: 640px) {
+  header .brand span { display: none; }
+  /* Two rows on phones so nothing is pushed off-screen: brand + Feedback/Guide, then the view tabs. */
+  header { height: auto; flex-wrap: wrap; gap: 6px 8px; padding: 6px 8px; }
+  nav { order: 3; width: 100%; }
+  nav button { flex: 1; padding: 5px 4px; white-space: nowrap; }
+}
 nav {
   display: flex;
   gap: 4px;
@@ -110,7 +123,18 @@ nav button.on, .guide-btn.on {
   border-color: var(--accent);
   color: #1a1a1a;
 }
-.guide-btn { margin-left: auto; white-space: nowrap; }
+.header-actions { margin-left: auto; display: flex; gap: 4px; }
+.feedback-btn {
+  white-space: nowrap;
+  color: var(--text);
+  text-decoration: none;
+  background: #23252c;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+.feedback-btn:hover { background: #2c2f37; }
+.guide-btn { white-space: nowrap; }
 main {
   flex: 1;
   min-height: 0;

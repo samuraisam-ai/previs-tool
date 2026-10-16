@@ -35,7 +35,15 @@
       <BlockingBar />
     </div>
 
-    <aside class="panel plan-panel">
+    <button
+      v-if="isPhone"
+      :class="['panel-tab', { open: panelOpen }]"
+      :title="panelOpen ? 'Hide panel' : 'Show panel'"
+      :aria-label="panelOpen ? 'Hide panel' : 'Show panel'"
+      :aria-expanded="panelOpen"
+      @click="panelOpen = !panelOpen"
+    >{{ panelOpen ? '›' : '‹' }}</button>
+    <aside :class="['panel', 'plan-panel', { drawer: isPhone, open: panelOpen }]">
       <ItemPanel v-if="panel === 'item'" :id="editor.selection[0]" />
       <WallPanel v-else-if="panel === 'wall'" :id="editor.selection[0]" />
       <OpeningPanel v-else-if="panel === 'opening'" :id="editor.selection[0]" />
@@ -101,6 +109,7 @@ import WorldPanel from '../plan/panels/WorldPanel.vue'
 import { requestCapture } from '../setups/capture'
 import { capturePlan } from '../setups/capturePlan'
 import { initSetups } from '../setups/store'
+import { isPhone } from '../phone'
 import ArchLayer from '../plan/ArchLayer.vue'
 import ItemLayer from '../plan/ItemLayer.vue'
 import OverlayLayer from '../plan/OverlayLayer.vue'
@@ -160,6 +169,8 @@ export default defineComponent({
     const svg = ref<SVGSVGElement | null>(null)
     const area = ref<HTMLDivElement | null>(null)
     const showLibrary = ref(false)
+    // On phones the side panel is a drawer that starts closed.
+    const panelOpen = ref(!isPhone.value)
     const panning = ref(false)
     let spaceHeld = false
     let gesture: Gesture | null = null
@@ -748,7 +759,7 @@ export default defineComponent({
     return {
       capture, lineToggle,
       svg, area, editor, setTool, showLibrary, showProps, loadDemo, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
-      onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint
+      onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint, isPhone, panelOpen
     }
   }
 })
@@ -757,7 +768,7 @@ export default defineComponent({
 <style scoped>
 .demos { display: flex; gap: 8px; }
 .demos .demo { flex: 1; }
-.plan { display: flex; width: 100%; height: 100%; }
+.plan { position: relative; display: flex; width: 100%; height: 100%; overflow: hidden; overflow: clip; }
 .canvas-area { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
 .canvas { flex: 1; width: 100%; min-height: 0; background: #15161a; user-select: none; touch-action: none; }
 .canvas.tool-select { cursor: default; }
@@ -776,6 +787,19 @@ export default defineComponent({
   width: 280px; flex-shrink: 0; padding: 16px; border-left: 1px solid var(--line); background: var(--panel);
   overflow-y: auto; font-size: 13px;
 }
+/* Phones: the panel slides over the plan instead of squeezing it, and starts hidden. */
+.panel.drawer {
+  position: absolute; top: 0; right: 0; bottom: 0; z-index: 10; box-sizing: border-box; width: min(280px, 85%);
+  transform: translateX(100%); visibility: hidden; transition: transform 0.2s ease, visibility 0.2s;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+.panel.drawer.open { transform: none; visibility: visible; }
+.panel-tab {
+  position: absolute; top: 50%; right: 0; z-index: 11; transform: translateY(-50%);
+  padding: 16px 6px; font-size: 18px; line-height: 1; border-right: none; border-radius: 8px 0 0 8px;
+  background: var(--panel); transition: right 0.2s ease;
+}
+.panel-tab.open { right: min(280px, 85%); }
 </style>
 
 <style>
