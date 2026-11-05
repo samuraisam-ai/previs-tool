@@ -130,7 +130,7 @@ import { addItem, getItem, scene } from '../scene/store'
 import { ItemKind, Pt, SceneItem, Wall } from '../scene/types'
 
 type Gesture =
-  | { type: 'pan'; sx: number; sy: number; cx: number; cz: number }
+  | { type: 'pan'; sx: number; sy: number; cx: number; cz: number; clearOnTap?: boolean }
   | { type: 'move'; start: Pt; ids: string[]; session: TransformSession | null; clickId: string | null }
   | { type: 'marquee'; a: Pt; b: Pt; additive: boolean }
   | { type: 'rotate'; pivot: Pt; start: number; session: TransformSession }
@@ -177,6 +177,11 @@ export default defineComponent({
     // What was under the pointer on the last press (pointer capture retargets dblclick to the svg).
     let lastDownId: string | null = null
     const marquee = ref<{ a: Pt; b: Pt } | null>(null)
+    // Touch: fingers currently down, and the two-finger pinch (zoom + pan) when there is one.
+    const touches = new Map<number, { clientX: number; clientY: number }>()
+    let pinch: { dist: number; scale: number; world: Pt } | null = null
+    // After a pinch, the finger still down does nothing until it lifts.
+    let pinchEnded = false
     // First click of the 180° line tool.
     const lineStart = ref<Pt | null>(null)
 
@@ -329,9 +334,43 @@ export default defineComponent({
       })
     }
 
+    // ── Touch: pinch to zoom, two fingers to pan ─────────────────────────
+    const touchPair = () => {
+      const [a, b] = Array.from(touches.values())
+      return { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1, mid: { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 } }
+    }
+    const startPinch = () => {
+      // A second finger cancels whatever the first one started (a box, a room, a measure).
+      gesture = null
+      marquee.value = null
+      editor.draft = null
+      editor.hud = null
+      editor.snapPoint = null
+      editor.dragging = false
+      panning.value = false
+      const { dist, mid } = touchPair()
+      pinch = { dist, scale: editor.view.scale, world: toWorld(mid) }
+    }
+    const movePinch = () => {
+      if (!pinch) return
+      const { dist, mid } = touchPair()
+      editor.view.scale = Math.min(800, Math.max(4, pinch.scale * (dist / pinch.dist)))
+      // Keep the world point that started between the fingers under them.
+      const after = toWorld(mid)
+      editor.view.cx += pinch.world.x - after.x
+      editor.view.cz += pinch.world.z - after.z
+    }
+
     const onDown = (event: PointerEvent) => {
       const el = svg.value as SVGSVGElement
-      el.setPointerCapture(event.pointerId)
+      // Can throw if the pointer is already gone (a finger lifted mid-event); capture is a nicety.
+      try { el.setPointerCapture(event.pointerId) } catch { /* keep going without capture */ }
+      if (event.pointerType === 'touch') {
+        touches.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY })
+        if (touches.size === 2) { startPinch(); return }
+        if (touches.size > 2 || pinch) return
+        pinchEnded = false
+      }
       const p = toWorld(event)
       const panGesture = event.button === 1 || event.button === 2 || spaceHeld || editor.tool === 'pan'
       // Editing while blocking plays: stop the preview so what you edit is what you see.
@@ -454,12 +493,23 @@ export default defineComponent({
         gesture = { type: 'move', start: p, ids: expandSelection(editor.selection), session: null, clickId }
         return
       }
+      // A finger on empty floor pans the plan (a box select needs a mouse); a tap still deselects.
+      if (event.pointerType === 'touch') {
+        gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz, clearOnTap: true }
+        panning.value = true
+        return
+      }
       if (!event.shiftKey) clearSelection()
       gesture = { type: 'marquee', a: p, b: p, additive: event.shiftKey }
       marquee.value = { a: p, b: p }
     }
 
     const onMove = (event: PointerEvent) => {
+      if (event.pointerType === 'touch' && touches.has(event.pointerId)) {
+        touches.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY })
+        if (pinch) { movePinch(); return }
+        if (pinchEnded) return
+      }
       const p = toWorld(event)
       const free = event.altKey
       if (!gesture) {
@@ -577,10 +627,19 @@ export default defineComponent({
       }
     }
 
-    const onUp = () => {
+    const onUp = (event?: PointerEvent) => {
+      if (event?.pointerType === 'touch') {
+        touches.delete(event.pointerId)
+        if (pinch) {
+          if (touches.size < 2) { pinch = null; pinchEnded = touches.size > 0 }
+          return
+        }
+        if (pinchEnded) { pinchEnded = touches.size > 0; return }
+      }
       const g = gesture
       gesture = null
       panning.value = false
+      if (g?.type === 'pan' && g.clearOnTap && event && Math.hypot(event.clientX - g.sx, event.clientY - g.sy) < 8) clearSelection()
       if (g?.type === 'move' && !g.session && g.clickId && editor.selection.length > 1) setSelection([g.clickId])
       if (g?.type === 'marquee') {
         const found = entitiesIn(g.a, g.b)

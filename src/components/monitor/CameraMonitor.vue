@@ -1,5 +1,5 @@
 <template>
-  <div v-if="cam" class="monitor" :style="rectStyle" @wheel="onImageWheel">
+  <div v-if="cam" :class="['monitor', { compact, below }]" :style="rectStyle" @wheel="onImageWheel">
     <!-- On-image assists: frame lines, grid, centre, safety. Frame lines stay even with DISP off. -->
     <svg class="assist" :viewBox="`0 0 ${rect.width} ${rect.height}`" preserveAspectRatio="none">
       <template v-if="frame">
@@ -24,11 +24,16 @@
       <div class="top-bar">
         <span :class="['rec', { on: p.recording }]">{{ p.recording ? '● REC' : 'STBY' }}</span>
         <span class="tc">{{ timecode }}</span>
-        <span>{{ body.format.label }} {{ rate.label }}</span>
-        <span class="dim">{{ body.format.codec }}</span>
+        <template v-if="!compact">
+          <span>{{ body.format.label }} {{ rate.label }}</span>
+          <span class="dim">{{ body.format.codec }}</span>
+        </template>
         <span class="spacer"></span>
-        <span>{{ profile.label }}</span>
-        <span class="dim">{{ body.brand }} {{ body.model }} · {{ lens.name }}</span>
+        <template v-if="!compact">
+          <span>{{ profile.label }}</span>
+          <span class="dim">{{ body.brand }} {{ body.model }} · {{ lens.name }}</span>
+        </template>
+        <span v-else class="dim">{{ lens.name }}</span>
       </div>
 
       <!-- Right-hand buttons -->
@@ -45,7 +50,10 @@
         <span style="background:#ff8cb3">skin</span><span style="background:#ffe600;color:#000">≥92</span><span style="background:#f00">clip</span>
       </div>
 
-      <ScopeDock v-if="d.scopes.length" class="scopes" :frame="frameCapture" :scopes="d.scopes" />
+      <!-- The dock is invisible on big screens (its parts sit on the image). On a portrait phone it
+           moves the parameter grid, the control popup and the scopes into the space below the image. -->
+      <div class="dock" :style="dockStyle">
+      <ScopeDock v-if="d.scopes.length && (!compact || below)" class="scopes" :frame="frameCapture" :scopes="d.scopes" />
 
       <!-- Control popup for the selected parameter -->
       <div v-if="selected" class="control-pop" @wheel.stop>
@@ -109,6 +117,7 @@
           <span>{{ mmText }}</span>
           <div class="mm-scale"><i :style="{ left: `${50 + Math.max(-2, Math.min(2, mm)) * 25}%` }"></i></div>
         </div>
+      </div>
       </div>
 
       <!-- MENU -->
@@ -176,7 +185,9 @@ export default defineComponent({
     cameraId: { type: String, required: true },
     rect: { type: Object as PropType<{ x: number; y: number; width: number; height: number }>, required: true },
     frameCapture: { type: Object as PropType<FrameCapture | null>, default: null },
-    active: { type: Boolean, default: true }
+    active: { type: Boolean, default: true },
+    // The whole Live View area the image sits in (for phone layouts that use the letterbox).
+    area: { type: Object as PropType<{ width: number; height: number } | null>, default: null }
   },
   emits: ['capture'],
   setup(props) {
@@ -419,12 +430,18 @@ export default defineComponent({
     const rectStyle = computed(() => ({
       left: `${props.rect.x}px`, top: `${props.rect.y}px`, width: `${props.rect.width}px`, height: `${props.rect.height}px`
     }))
+    // Small images (phones) get a trimmed display. When there's room under the image (a phone held
+    // upright), the parameters, popups and scopes move down there instead of covering the picture.
+    const compact = computed(() => props.rect.width < 720)
+    const spaceBelow = computed(() => (props.area ? props.area.height - props.rect.y - props.rect.height : 0))
+    const below = computed(() => compact.value && spaceBelow.value >= 150)
+    const dockStyle = computed(() => (below.value ? { maxHeight: `${spaceBelow.value - 8}px` } : {}))
 
     return {
       cam, p, d, body, lens, rate, profile, subjects, focusM, dof, selected, menuOpen, select, stepParam,
       neighbours, dragStart, dragMove, dragEnd, clampIris, clampIso, clampShutter, setShutterMode,
       setManualFocus, track, toggleScope, mm, mmText, mmClass, cells, frame, gridLines, toggleRec, timecode,
-      onImageWheel, rectStyle, formatDistance, lenses: LENSES, heading, setHeading,
+      onImageWheel, rectStyle, formatDistance, lenses: LENSES, heading, setHeading, compact, below, dockStyle,
       frameLineOptions: ['off', '2.39', '2.00', '1.85', '4:3', '1:1', '9:16', '4:5'],
       scopeOptions: [
         { id: 'histogram', label: 'Histogram' }, { id: 'waveform', label: 'Waveform (RGB overlay)' },
@@ -533,6 +550,33 @@ button { font-family: inherit; text-shadow: none; }
   font-size: 12px; text-shadow: none; display: flex; flex-direction: column; gap: 6px;
 }
 .menu h5 { margin: 6px 0 0; font-size: 10px; letter-spacing: 1.5px; color: #ffb547; }
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+.dock { display: contents; }
+.compact .top-bar { gap: 10px; font-size: 11px; }
+.compact .menu { left: 8px; right: 8px; width: auto; top: 28px; bottom: 8px; }
+.compact .scroller span { width: 44px; }
+.compact .control-pop { max-width: calc(100% - 16px); flex-wrap: wrap; justify-content: center; gap: 10px; }
+/* Held sideways: everything stays on the image, just smaller. */
+.compact:not(.below) .bottom-bar { padding: 2px 4px; gap: 0; }
+.compact:not(.below) .cell { padding: 2px 3px; }
+.compact:not(.below) .cell small { font-size: 8px; letter-spacing: 0.5px; }
+.compact:not(.below) .cell span { font-size: 11px; }
+.compact:not(.below) .control-pop { bottom: 44px; }
+/* Held upright: buttons in a row above the image, the rest in the dock below it. */
+.below .side-buttons { top: auto; bottom: calc(100% + 6px); left: 0; right: 0; flex-direction: row; justify-content: flex-end; }
+.below .side-buttons .still-btn { margin-top: 0; margin-left: 6px; }
+.below .dock {
+  position: absolute; top: 100%; left: 0; right: 0; display: flex; flex-direction: column; gap: 6px;
+  padding-top: 6px; overflow-y: auto;
+}
+.below .bottom-bar {
+  position: static; order: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px;
+  background: rgba(20, 20, 24, 0.9); border-radius: 6px;
+}
+.below .cell { padding: 4px 6px; }
+.below .control-pop { position: static; order: 2; transform: none; align-self: center; }
+.below .scopes { position: static; order: 3; align-self: center; }
 .menu label { display: flex; flex-direction: column; gap: 3px; color: rgba(255, 255, 255, 0.7); }
 .menu label.check { flex-direction: row; align-items: center; gap: 6px; color: #fff; }
 .menu select { width: 100%; font-size: 12px; padding: 3px 6px; }

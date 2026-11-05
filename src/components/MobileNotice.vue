@@ -3,17 +3,19 @@
     <div class="card" role="dialog" aria-modal="true" aria-labelledby="mobile-notice-title">
       <div class="icon" aria-hidden="true">📱</div>
       <h3 id="mobile-notice-title">Best on a bigger screen</h3>
-      <p>This previs platform is built for tablets, laptops and desktop computers. Please open it on one of those for the full experience.</p>
-      <p class="soon">Phone optimisation coming soon.</p>
-      <button class="primary" @click="dismiss">Continue anyway</button>
+      <p v-if="setLink.state === 'failed'" class="failed">{{ setLink.message }}</p>
+      <p>Building sets needs a tablet, laptop or desktop. On a phone you can still walk around a furnished set in 3D and look through the camera.</p>
+      <button class="primary" @click="lookAround">Look around a sample set</button>
+      <button class="secondary" @click="dismiss">Continue to the full app</button>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { isPhone } from '../phone'
+import { openSet, setLink } from '../sets'
 
 const DISMISSED_KEY = 'previs.mobileNoticeDismissed'
 
@@ -40,10 +42,13 @@ export default defineComponent({
       box.value = { left: `${vv.offsetLeft}px`, top: `${vv.offsetTop}px`, width: `${vv.width}px`, height: `${vv.height}px` }
     }
 
+    // A working set link opens the phone viewer, so the notice stays out of the way. A broken one
+    // falls back to the notice, which says what went wrong and offers the sample instead.
     function check() {
-      show.value = isPhone.value && !dismissed.value
+      show.value = isPhone.value && !dismissed.value && (setLink.state === 'none' || setLink.state === 'failed')
       fitToScreen()
     }
+    watch(() => setLink.state, check)
 
     function dismiss() {
       dismissed.value = true
@@ -53,6 +58,11 @@ export default defineComponent({
       } catch {
         // Storage blocked (private mode etc.) — dismissal just won't survive a reload.
       }
+    }
+
+    function lookAround() {
+      dismiss()
+      openSet('house-1bed')
     }
 
     onMounted(() => {
@@ -69,7 +79,7 @@ export default defineComponent({
       window.visualViewport?.removeEventListener('scroll', fitToScreen)
     })
 
-    return { show, box, dismiss }
+    return { show, box, dismiss, lookAround, setLink }
   }
 })
 </script>
@@ -80,7 +90,8 @@ export default defineComponent({
 .icon { font-size: 32px; line-height: 1; }
 h3 { margin: 10px 0 8px; }
 p { margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
-.soon { color: var(--accent); font-size: 13px; font-weight: 600; }
+.failed { color: #ff8a8a; }
+.secondary { width: 100%; margin-top: 8px; padding: 9px 10px; }
 .primary { width: 100%; margin-top: 6px; padding: 9px 10px; background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
 .primary:hover { background: var(--accent); filter: brightness(1.08); }
 </style>

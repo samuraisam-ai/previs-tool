@@ -22,6 +22,7 @@
     <CaptureDialog v-if="captureState.request" :key="captureState.request.previewUrl" :request="captureState.request" />
     <CaptureToast />
     <MobileNotice />
+    <SetBar />
   </div>
 </template>
 
@@ -31,6 +32,8 @@ import { nav } from './nav'
 import { captureState } from './setups/capture'
 import { FEEDBACK_URL } from './feedback'
 import MobileNotice from './components/MobileNotice.vue'
+import SetBar from './components/SetBar.vue'
+import { openSetFromUrl } from './sets'
 import CaptureDialog from './setups/components/CaptureDialog.vue'
 import CaptureToast from './setups/components/CaptureToast.vue'
 import { ensureSamples } from './setups/samples'
@@ -49,10 +52,12 @@ export default defineComponent({
     GuideView,
     CaptureDialog,
     CaptureToast,
-    MobileNotice
+    MobileNotice,
+    SetBar
   },
   setup() {
     initSetups().then(ensureSamples)
+    openSetFromUrl()
     return { nav, captureState, FEEDBACK_URL }
   }
 })

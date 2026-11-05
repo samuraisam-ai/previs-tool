@@ -47,6 +47,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, PropType, ref } from 'vue'
+import { track } from '../../analytics'
 import { openSetups } from '../../nav'
 import { useReorder } from '../reorder'
 import { createScene, deleteProduction, exportProduction, nextSceneNumber, SceneFields, scenesOf, setups, updateProduction } from '../store'
@@ -83,7 +84,10 @@ export default defineComponent({
     }
     const exportFile = async () => {
       exporting.value = true
-      try { download(await exportProduction(props.production), `${fileSafe(props.production.title)}.previs.json`) } finally { exporting.value = false }
+      try {
+        download(await exportProduction(props.production), `${fileSafe(props.production.title)}.previs.json`)
+        track('Production exported', { scenes: props.production.sceneOrder.length })
+      } finally { exporting.value = false }
     }
     const counts = (s: Scene) => {
       const setupsCount = setups.captures.filter(c => c.sceneId === s.id && c.kind === 'setup').length

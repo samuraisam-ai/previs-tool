@@ -449,6 +449,24 @@ export class LiveScene {
     this.requestRender()
   }
 
+  // Point the orbit camera at a plan area (x/z bounds in metres) from a three-quarter view high
+  // enough to see into the rooms, far enough back to fit it in the view.
+  frameOrbit(minX: number, maxX: number, minZ: number, maxZ: number): void {
+    const cam = this.orbitCamera
+    const span = Math.max(maxX - minX, maxZ - minZ, 2)
+    const aspect = this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight)
+    // fov is vertical, so a narrow (portrait) view stands further back to fit the same width. The
+    // three-quarter angle shows a set wider than its longest side, hence a little over half the span.
+    const fit = (span * 0.62) / Math.tan(cam.fov / 2) / Math.min(1, aspect)
+    cam.setTarget(new Vector3((minX + maxX) / 2, 0.8, (minZ + maxZ) / 2))
+    cam.alpha = -Math.PI / 2 - 0.5
+    cam.beta = 0.85
+    // A big set on a portrait phone can need more room than the usual 30 m zoom-out limit.
+    cam.upperRadiusLimit = Math.max(30, Math.ceil(fit * 1.2))
+    cam.radius = Math.max(cam.lowerRadiusLimit ?? 1, fit)
+    this.requestRender()
+  }
+
   private applyLayers(): void {
     this.orbitCamera.layerMask = LAYER.COMMON | LAYER.MARKS | (this.cutaway ? LAYER.CUT_WALLS : LAYER.FULL_WALLS)
     this.entries.forEach(entry => {

@@ -32,6 +32,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, nextTick, ref, watch } from 'vue'
+import { track } from '../../analytics'
 import { openSetups } from '../../nav'
 import { missingSamples, restoreSamples } from '../samples'
 import { createProduction, importProduction, scenesOf, setups } from '../store'
@@ -79,6 +80,7 @@ export default defineComponent({
         error.value = ''
         try {
           const p = await importProduction(await file.text())
+          track('Production imported', { scenes: p.sceneOrder.length })
           openSetups(p.id)
         } catch (e) {
           error.value = e instanceof Error ? e.message : 'Could not import that file.'

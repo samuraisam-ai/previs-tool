@@ -1,5 +1,5 @@
 <template>
-  <div ref="container" class="live">
+  <div ref="container" class="live" :class="{ phone: phoneBridge }">
     <div v-if="!device.webgl2" class="unsupported">
       <h3>3D isn't available on this browser or computer</h3>
       <p>The Live View needs WebGL2 (any recent Chrome, Edge, Firefox or Safari with hardware acceleration on).
@@ -8,17 +8,34 @@
     <template v-else>
       <canvas ref="canvas"></canvas>
       <CameraMonitor
-        v-if="viewId && imageRect"
+        v-if="viewId && imageRect && !phoneBridge"
         :camera-id="viewId"
         :rect="imageRect"
         :frame-capture="frameCapture"
         :active="active"
+        :area="viewSize"
         @capture="captureFrame"
       />
       <div v-if="renderState.preparing" class="preparing">Preparing lights…</div>
       <div v-else-if="renderState.building.left" class="preparing">Building set… {{ renderState.building.total - renderState.building.left }} / {{ renderState.building.total }}</div>
       <div v-if="notice" class="notice">{{ notice }}</div>
-      <div class="overlay">
+      <!-- Phones opening a set link: a clean look-only viewer (no monitor, just views and lenses). -->
+      <div v-if="phoneBridge" class="overlay phone">
+        <div class="views">
+          <button :class="{ on: !viewId }" @click="viewId = null">Orbit</button>
+          <button v-for="cam in cameras" :key="cam.id" :class="{ on: viewId === cam.id }" @click="viewId = cam.id">{{ cam.name }}</button>
+        </div>
+        <div v-if="viewing" class="lens">
+          <button aria-label="Wider lens" :disabled="lensIndex <= 0" @click="stepLens(-1)">−</button>
+          <span>{{ lensLabel(viewing) }}</span>
+          <button aria-label="Longer lens" :disabled="lensIndex >= LENSES.length - 1" @click="stepLens(1)">+</button>
+        </div>
+        <button v-if="hasMarks" class="play" :class="{ on: playback.playing }" @click="togglePlay">
+          {{ playback.playing ? '❚❚' : '▶' }} Blocking
+        </button>
+        <span v-if="viewing && portrait" class="hint">Turn your phone sideways for a bigger frame.</span>
+      </div>
+      <div v-else class="overlay" :class="{ compact: isPhone }">
         <label>
           View
           <select v-model="viewId">
@@ -26,13 +43,17 @@
             <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }} · {{ lensLabel(cam) }}</option>
           </select>
         </label>
-        <label v-if="!viewId && cameras.length">
+        <!-- Phones: everything but View and Blocking folds away behind one button. -->
+        <button v-if="isPhone" class="more" :class="{ on: controlsOpen }" :aria-expanded="controlsOpen" @click="controlsOpen = !controlsOpen">
+          {{ controlsOpen ? '✕ Close' : '⚙ Controls' }}
+        </button>
+        <label v-if="showControls && !viewId && cameras.length">
           Exposure from
           <select v-model="scene.activeCameraId">
             <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }}</option>
           </select>
         </label>
-        <label v-if="!viewId" title="Dollhouse view: walls cut at hip height so you can see into the rooms">
+        <label v-if="showControls && !viewId" title="Dollhouse view: walls cut at hip height so you can see into the rooms">
           Walls
           <select v-model="editor.cutaway">
             <option :value="true">Cutaway</option>
@@ -43,15 +64,15 @@
           {{ playback.playing ? '❚❚' : '▶' }} Blocking
         </button>
         <button v-if="playback.active" class="play" title="Stop blocking: back to the start" @click="stopPlayback">■</button>
-        <label v-if="hasMarks && viewId" title="Show the blocking tape marks through the camera">
+        <label v-if="showControls && hasMarks && viewId" title="Show the blocking tape marks through the camera">
           <input v-model="marksInCamera" type="checkbox" />
           Marks
         </label>
-        <label class="blackout" :class="{ on: scene.world.blackout }" title="Blackout: remove the outside/ambient light so only your fixtures light the scene">
+        <label v-if="showControls" class="blackout" :class="{ on: scene.world.blackout }" title="Blackout: remove the outside/ambient light so only your fixtures light the scene">
           <input v-model="scene.world.blackout" type="checkbox" />
           Blackout
         </label>
-        <label :title="`Detected: ${device.gpu} (${device.reason}). Colour, exposure and bokeh are identical on every level; only smoothness and shadow detail change.`">
+        <label v-if="showControls" :title="`Detected: ${device.gpu} (${device.reason}). Colour, exposure and bokeh are identical on every level; only smoothness and shadow detail change.`">
           Performance
           <select v-model="performance">
             <option value="auto">Auto ({{ tierLabel(device.tier) }}{{ autoScaleNote }})</option>
@@ -60,17 +81,18 @@
             <option value="high">High</option>
           </select>
         </label>
-        <span v-if="!viewId" class="hint">Drag to orbit · right-drag to pan · scroll to zoom</span>
+        <span v-if="!viewId && !isPhone" class="hint">Drag to orbit · right-drag to pan · scroll to zoom</span>
+        <span v-else-if="!viewId && controlsOpen" class="hint">Drag to orbit · pinch to zoom · two fingers to pan</span>
       </div>
     </template>
   </div>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import CameraMonitor from '../components/monitor/CameraMonitor.vue'
 import { getBody } from '../library/cameras'
-import { getLens } from '../library/lenses'
+import { getLens, LENSES } from '../library/lenses'
 import { detectDevice } from '../live/deviceTier'
 import { FrameCapture, LiveScene } from '../live/LiveScene'
 import { renderState, TierId, TIERS } from '../live/renderState'
@@ -81,6 +103,9 @@ import { captureFrame as captureFrameRequest } from '../setups/captureFrame'
 import { initSetups } from '../setups/store'
 import { scene } from '../scene/store'
 import { CameraItem } from '../scene/types'
+import { setContext, track } from '../analytics'
+import { isPhone } from '../phone'
+import { phoneBridge, setLink } from '../sets'
 
 type PerformanceSetting = 'auto' | TierId
 
@@ -95,8 +120,15 @@ export default defineComponent({
     const canvas = ref<HTMLCanvasElement | null>(null)
     const viewId = ref<string | null>(null)
     const imageRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
+    const portrait = ref(false)
+    const viewSize = ref({ width: 0, height: 0 })
+    // Phones start with the Live View controls folded away.
+    const controlsOpen = ref(!isPhone.value)
+    const showControls = computed(() => !isPhone.value || controlsOpen.value)
     const frameCapture = shallowRef<FrameCapture | null>(null)
     const device = detectDevice()
+    // Which hardware people bring tells us how far the "runs on modest laptops" goal reaches.
+    setContext({ gpu_tier: device.tier, webgl2: device.webgl2, gpu: device.gpu, memory_gb: device.memoryGB })
     // Kept outside Vue reactivity: Babylon objects must not be wrapped in proxies.
     let live: LiveScene | null = null
     let resizeObserver: ResizeObserver | null = null
@@ -149,6 +181,8 @@ export default defineComponent({
       if (!el) return
       const W = el.clientWidth
       const H = el.clientHeight
+      portrait.value = H > W
+      viewSize.value = { width: W, height: H }
       const cam = viewing.value
       let rect = { x: 0, y: 0, width: W, height: H }
       if (cam) {
@@ -162,7 +196,7 @@ export default defineComponent({
       live?.setImageRect(rect)
     }
 
-    const wantFrames = computed(() => Boolean(props.active && viewing.value && viewing.value.props.display.osd && viewing.value.props.display.scopes.length))
+    const wantFrames = computed(() => Boolean(props.active && !phoneBridge.value && viewing.value && viewing.value.props.display.osd && viewing.value.props.display.scopes.length))
     watch(wantFrames, on => live?.onFrame(on ? frame => { frameCapture.value = frame } : null))
 
     // ── Syncing the 3D scene ──────────────────────────────────────────────
@@ -223,10 +257,29 @@ export default defineComponent({
       // Exposure/WB follow the camera being looked through.
       runSync()
       if (id) scene.activeCameraId = id
+      if (id) track('Camera view', { lens: viewing.value?.props.lensId ?? null, phone_viewer: phoneBridge.value })
     })
     watch(cameras, list => {
       if (viewId.value && !list.some(cam => cam.id === viewId.value)) viewId.value = null
     })
+
+    // ── Set links ─────────────────────────────────────────────────────────
+    // A set opened from a link starts framed in orbit, or through the camera the set file names.
+    // Wait a frame so the view is on screen (and sized) before framing it.
+    watch(() => setLink.state, state => {
+      if (state !== 'open') return
+      nextTick(() => requestAnimationFrame(() => {
+        const pts = [...scene.walls.flatMap(w => [w.a, w.b]), ...scene.rooms.flatMap(r => r.points)]
+        if (pts.length) live?.frameOrbit(Math.min(...pts.map(p => p.x)), Math.max(...pts.map(p => p.x)), Math.min(...pts.map(p => p.z)), Math.max(...pts.map(p => p.z)))
+        viewId.value = setLink.viewId
+      }))
+    })
+    const lensIndex = computed(() => (viewing.value ? LENSES.findIndex(l => l.id === viewing.value?.props.lensId) : -1))
+    const stepLens = (dir: number) => {
+      const cam = viewing.value
+      if (!cam) return
+      cam.props.lensId = LENSES[Math.min(LENSES.length - 1, Math.max(0, lensIndex.value + dir))].id
+    }
 
     // ── Blocking ──────────────────────────────────────────────────────────
     const hasMarks = computed(() => scene.marks.length > 0)
@@ -280,7 +333,9 @@ export default defineComponent({
     return {
       container, canvas, viewId, imageRect, frameCapture, cameras, scene, lensLabel, editor, device,
       performance, tierLabel, autoScaleNote, renderState, notice, captureFrame,
-      playback, togglePlay, stopPlayback, hasMarks, marksInCamera
+      playback, togglePlay, stopPlayback, hasMarks, marksInCamera,
+      phoneBridge, viewing, portrait, LENSES, lensIndex, stepLens,
+      isPhone, controlsOpen, showControls, viewSize
     }
   }
 })
@@ -328,6 +383,19 @@ canvas {
 .overlay .play.on { background: var(--accent); color: #1a1a1a; border-color: var(--accent); }
 .overlay .blackout input { accent-color: var(--accent); margin: 0; }
 .overlay .blackout.on { color: #1a1a1a; background: var(--accent); }
+.overlay.compact { top: 8px; left: 8px; right: 8px; gap: 6px; }
+.overlay.compact label { padding: 5px 8px; }
+.overlay .more { font-size: 13px; padding: 6px 10px; background: rgba(20, 20, 24, 0.85); border-radius: 6px; }
+.overlay .more.on { color: var(--accent); }
+.overlay.phone { top: 8px; left: 8px; right: 8px; gap: 6px; }
+.overlay.phone .views, .overlay.phone .lens { display: flex; gap: 2px; padding: 2px; background: rgba(20, 20, 24, 0.85); border-radius: 8px; }
+.overlay.phone button { padding: 7px 11px; background: transparent; border-color: transparent; }
+.overlay.phone .views button.on { background: var(--accent); color: #1a1a1a; }
+.overlay.phone .lens span { align-self: center; min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.overlay.phone .lens button { min-width: 36px; font-size: 16px; }
+.overlay.phone .lens button:disabled { opacity: 0.35; }
+.overlay.phone .play { background: rgba(20, 20, 24, 0.85); }
+.overlay.phone .hint { width: 100%; font-size: 12px; }
 .preparing {
   position: absolute;
   right: 12px;
@@ -339,6 +407,8 @@ canvas {
   background: rgba(20, 20, 24, 0.85);
   color: var(--accent);
 }
+/* On phones the view buttons span the top, so progress sits above the set bar instead. */
+.live.phone .preparing { top: auto; right: auto; left: 50%; bottom: 104px; transform: translateX(-50%); white-space: nowrap; }
 .notice {
   position: absolute;
   left: 50%;

@@ -74,7 +74,7 @@ export default defineComponent({
   top: 56px;
   left: 12px;
   bottom: 48px;
-  width: 360px;
+  width: min(360px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   background: var(--panel);

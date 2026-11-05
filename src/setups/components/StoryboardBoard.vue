@@ -127,6 +127,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, PropType, ref, watch } from 'vue'
+import { track } from '../../analytics'
 import { capturesOf, getProduction, imageUrl, PANELS_PER_PAGE, setBoard, updateCapture } from '../store'
 import { Capture, captureLabel, Scene, Shot, SHOT_SIZES, slugLine } from '../types'
 import CaptureViewer from './CaptureViewer.vue'
@@ -257,7 +258,10 @@ export default defineComponent({
       if (c?.shot) updateCapture(c, { shot: { ...c.shot, ...patch } as Shot })
     }
 
-    const print = () => printStoryboard(props.scene, productionTitle.value, pages.value.slice(0, usedPages.value), byId)
+    const print = () => {
+      track('Storyboard printed', { pages: usedPages.value, frames: placedCount.value })
+      printStoryboard(props.scene, productionTitle.value, pages.value.slice(0, usedPages.value), byId)
+    }
 
     return {
       FILTERS, SHOT_SIZES, filter, picked, drag, overSlot, viewing, viewed, frames, allFrames, pages, placed, placedCount, unplaced, usedPages,
@@ -304,6 +308,16 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .sheet header b { flex: 1; color: var(--text); font-size: 13px; letter-spacing: 0.3px; }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 980px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: the frame strip becomes a sideways row above the pages (tap a frame, then a panel). */
+@media (max-width: 640px) {
+  .board-wrap { flex-direction: column; align-items: stretch; }
+  .strip { width: auto; position: static; max-height: none; }
+  .frames { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .frames li { width: 132px; flex-shrink: 0; }
+  .grid { gap: 8px; }
+  .sheet header { flex-wrap: wrap; row-gap: 2px; }
+  .sheet header b { order: -1; flex-basis: 100%; }
+}
 .panel { display: flex; flex-direction: column; min-width: 0; }
 .shot { position: relative; aspect-ratio: 16 / 9; background: #0b0c0f; border: 1px solid #33363e; border-radius: 4px; overflow: hidden; }
 .shot.empty { border-style: dashed; display: flex; align-items: center; justify-content: center; }

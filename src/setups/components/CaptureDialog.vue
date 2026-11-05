@@ -53,6 +53,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, nextTick, onMounted, PropType, reactive, ref, watch } from 'vue'
+import { track } from '../../analytics'
 import { nav } from '../../nav'
 import { CaptureRequest, closeCapture, enqueue, lastTarget, showToast } from '../capture'
 import { addCapture, createProduction, createScene, getProduction, getScene, nextCaptureNumber, nextSceneNumber, SceneFields, scenesOf, setups } from '../store'
@@ -136,6 +137,7 @@ export default defineComponent({
         try {
           const { image, thumb } = await request.render({ productionTitle: prod.title, sceneSlug: slugLine(scene), label, name: title, description: notes })
           await addCapture(scene, { kind, name: title, description: notes, image, thumb, sceneJson: request.sceneJson, shot: fullShot })
+          track('Capture saved', { kind, shot: fullShot?.size ?? null })
           showToast({ text: `Saved ${label}${title ? ` — ${title}` : ''}`, state: 'saved', ...where })
         } catch (e) {
           showToast({ text: `Couldn't save ${label}: ${e instanceof Error ? e.message : 'unknown error'}`, state: 'error', ...where })
