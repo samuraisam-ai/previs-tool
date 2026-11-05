@@ -1,6 +1,6 @@
 <template>
   <div class="backdrop" @mousedown.self="cancel">
-    <form ref="dialog" class="dialog" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1" @submit.prevent="save" @keydown.esc.stop="cancel">
+    <form ref="dialog" class="dialog" role="dialog" autocomplete="off" aria-modal="true" :aria-label="title" tabindex="-1" @submit.prevent="save" @keydown.esc.stop="cancel">
       <div class="preview"><img :src="request.previewUrl" alt="Captured image" /></div>
       <div class="fields">
         <h3>{{ title }}</h3>
@@ -12,7 +12,7 @@
             <option :value="NEW">＋ New production…</option>
           </select>
         </label>
-        <input v-if="productionId === NEW" ref="productionInput" v-model="productionTitle" placeholder="Production title" />
+        <input v-if="productionId === NEW" ref="productionInput" v-model="productionTitle" name="production-title" autocomplete="off" placeholder="Production title" />
 
         <label v-if="productionId !== NEW">
           Scene
@@ -32,14 +32,14 @@
           <div class="sizes" role="radiogroup" aria-label="Shot size">
             <button v-for="s in SHOT_SIZES" :key="s" type="button" role="radio" :aria-checked="shot.size === s" :class="{ on: shot.size === s }" @click="shot.size = s">{{ s }}</button>
           </div>
-          <label>Movement <input v-model="shot.movement" placeholder="Static, push in, pan left…" /></label>
-          <label>Action <textarea v-model="shot.action" rows="2" placeholder="What happens in the shot"></textarea></label>
-          <label>Dialogue <textarea v-model="shot.dialogue" rows="2" placeholder="Optional"></textarea></label>
+          <label>Movement <input v-model="shot.movement" name="shot-movement" autocomplete="off" placeholder="Static, push in, track left…" /></label>
+          <label>Action <textarea v-model="shot.action" autocomplete="off" rows="2" placeholder="What happens in the shot"></textarea></label>
+          <label>Dialogue <textarea v-model="shot.dialogue" autocomplete="off" rows="2" placeholder="Optional"></textarea></label>
           <small v-if="cameraSummary" class="auto">{{ cameraSummary }}</small>
         </template>
 
-        <label>Name <input ref="nameInput" v-model="name" :placeholder="request.kind === 'setup' ? 'e.g. Window key, practical fill' : 'e.g. Maya enters'" /></label>
-        <label>Description <textarea v-model="description" rows="3" placeholder="Notes: intent, gear, what changed"></textarea></label>
+        <label>Name <input ref="nameInput" v-model="name" name="capture-name" autocomplete="off" :placeholder="request.kind === 'setup' ? 'e.g. Window key, practical fill' : 'e.g. Maya enters'" /></label>
+        <label>Description <textarea v-model="description" autocomplete="off" rows="3" placeholder="Notes: intent, gear, what changed"></textarea></label>
 
         <div class="buttons">
           <button type="button" @click="cancel">Cancel</button>
@@ -147,7 +147,9 @@ export default defineComponent({
       })
     }
 
+    // Ready to type on a computer; on a touch screen the keyboard would cover the form.
     onMounted(() => {
+      if (window.matchMedia('(pointer: coarse)').matches) return
       if (productionId.value === NEW) productionInput.value?.focus()
       else nameInput.value?.focus()
     })

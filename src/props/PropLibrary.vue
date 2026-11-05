@@ -75,7 +75,8 @@ export default defineComponent({
       if (section.value === 'recent') return 'Props you add will appear here.'
       return 'Nothing here yet.'
     })
-    onMounted(() => search.value?.focus())
+    // Ready to type on a computer; on a touch screen the keyboard would cover the library.
+    onMounted(() => { if (!window.matchMedia('(pointer: coarse)').matches) search.value?.focus() })
     return { search, query, section, pick, results, count, size, emptyText, library, toggleFavourite, ROOMS, GROUPS, TOP }
   }
 })
@@ -88,13 +89,13 @@ header strong { white-space: nowrap; }
 .search { flex: 1; min-width: 0; }
 .close { padding: 2px 8px; }
 .body { flex: 1; min-height: 0; display: flex; }
-.rail { width: 170px; flex-shrink: 0; overflow-y: auto; padding: 8px 6px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; }
+.rail { width: 170px; flex-shrink: 0; overflow-y: auto; overscroll-behavior: contain; padding: 8px 6px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; }
 .rail button { display: flex; justify-content: space-between; align-items: center; border: none; background: none; text-align: left; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; }
 .rail button:hover { background: #23252c; }
 .rail button.on { background: rgba(255, 181, 71, 0.14); color: var(--accent); }
 .rail button span { font-size: 11px; color: var(--muted); }
 .heading { margin: 10px 8px 3px; font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--muted); }
-.grid-wrap { flex: 1; min-width: 0; overflow-y: auto; padding: 10px; }
+.grid-wrap { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .card { position: relative; border: 1px solid var(--line); border-radius: 8px; padding: 6px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; background: #1b1c21; }
 .card:hover { border-color: var(--accent); }

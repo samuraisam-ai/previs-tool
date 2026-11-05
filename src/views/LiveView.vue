@@ -1,5 +1,5 @@
 <template>
-  <div ref="container" class="live" :class="{ phone: phoneBridge }">
+  <div ref="container" class="live" :class="{ phone: phoneBridge, handheld: isPhone }">
     <div v-if="!device.webgl2" class="unsupported">
       <h3>3D isn't available on this browser or computer</h3>
       <p>The Live View needs WebGL2 (any recent Chrome, Edge, Firefox or Safari with hardware acceleration on).
@@ -109,6 +109,9 @@ import { phoneBridge, setLink } from '../sets'
 
 type PerformanceSetting = 'auto' | TierId
 
+// Where the picture starts on an upright phone: below the View row and the monitor's buttons.
+const PHONE_IMAGE_TOP = 86
+
 export default defineComponent({
   name: 'LiveView',
   components: { CameraMonitor },
@@ -190,7 +193,10 @@ export default defineComponent({
         const aspect = format.width / format.height
         const width = Math.min(W, H * aspect)
         const height = width / aspect
-        rect = { x: (W - width) / 2, y: (H - height) / 2, width, height }
+        // A phone held upright: the picture sits near the top (under the View controls and the
+        // monitor buttons), leaving the space below for the camera settings.
+        const top = portrait.value && W < 720 && !phoneBridge.value ? Math.min((H - height) / 2, PHONE_IMAGE_TOP) : (H - height) / 2
+        rect = { x: (W - width) / 2, y: top, width, height }
       }
       imageRect.value = cam ? rect : null
       live?.setImageRect(rect)
@@ -385,8 +391,8 @@ canvas {
 .overlay .blackout.on { color: #1a1a1a; background: var(--accent); }
 .overlay.compact { top: 8px; left: 8px; right: 8px; gap: 6px; }
 .overlay.compact label { padding: 5px 8px; }
-.overlay .more { font-size: 13px; padding: 6px 10px; background: rgba(20, 20, 24, 0.85); border-radius: 6px; }
-.overlay .more.on { color: var(--accent); }
+.overlay .more { font-size: 13px; padding: 6px 10px; background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; border-radius: 6px; }
+.overlay .more.on { background: rgba(20, 20, 24, 0.85); border-color: var(--accent); color: var(--accent); }
 .overlay.phone { top: 8px; left: 8px; right: 8px; gap: 6px; }
 .overlay.phone .views, .overlay.phone .lens { display: flex; gap: 2px; padding: 2px; background: rgba(20, 20, 24, 0.85); border-radius: 8px; }
 .overlay.phone button { padding: 7px 11px; background: transparent; border-color: transparent; }
@@ -407,7 +413,8 @@ canvas {
   background: rgba(20, 20, 24, 0.85);
   color: var(--accent);
 }
-/* On phones the view buttons span the top, so progress sits above the set bar instead. */
+/* On phones the view buttons span the top, so progress sits at the bottom (above the set bar in a set link). */
+.live.handheld .preparing { top: auto; right: auto; left: 50%; bottom: 16px; transform: translateX(-50%); white-space: nowrap; }
 .live.phone .preparing { top: auto; right: auto; left: 50%; bottom: 104px; transform: translateX(-50%); white-space: nowrap; }
 .notice {
   position: absolute;

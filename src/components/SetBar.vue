@@ -24,6 +24,7 @@
 
 <script lang="ts">
 import { computed, defineComponent, ref } from 'vue'
+import { track } from '../analytics'
 import { isPhone } from '../phone'
 import { phoneBridge, setLink, setUrl } from '../sets'
 
@@ -55,9 +56,12 @@ export default defineComponent({
     // else show the link to copy by hand.
     const sendToLaptop = async () => {
       const url = setUrl()
+      // The phone-to-laptop hand-off is the campaign's conversion step, so count how it went.
+      const sentBy = (method: string) => track('Set sent to laptop', { set: setLink.slug, method })
       if (navigator.share) {
         try {
           await navigator.share({ title: `Previs Tool · ${setLink.title}`, url })
+          sentBy('share sheet')
           return
         } catch (e) {
           if (e instanceof DOMException && e.name === 'AbortError') return
@@ -70,6 +74,7 @@ export default defineComponent({
       } catch {
         copied = legacyCopy(url)
       }
+      sentBy(copied ? 'copied' : 'shown to copy')
       if (copied) {
         sent.value = 'Link copied'
         window.setTimeout(() => { sent.value = '' }, 2500)

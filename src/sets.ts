@@ -116,11 +116,15 @@ export function openSetFromUrl(): void {
   if (slug !== null) openSet(slug.trim().toLowerCase())
 }
 
-// The address to send to a laptop: this page with just the set, without the campaign tags.
+// The address to send to a laptop: this page with the set, keeping the campaign tags (so the laptop
+// visit still counts for the post it came from) and marked via=phone (the hand-off worked).
 export function setUrl(): string {
-  const url = new URL(window.location.href)
+  const here = new URL(window.location.href)
+  const url = new URL(here.href)
   url.search = ''
   url.hash = ''
   url.searchParams.set('set', setLink.slug)
+  here.searchParams.forEach((value, key) => { if (key.startsWith('utm_')) url.searchParams.set(key, value) })
+  url.searchParams.set('via', 'phone')
   return url.toString()
 }

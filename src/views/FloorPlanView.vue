@@ -32,6 +32,7 @@
 
       <div class="scalebar" :style="{ width: `${scaleBar.px}px` }"><span>{{ scaleBar.label }}</span></div>
       <div class="hint">{{ hint }}</div>
+      <div v-if="added" :key="addedKey" class="added" role="status">{{ added }}</div>
       <BlockingBar />
     </div>
 
@@ -120,6 +121,7 @@ import WallPanel from '../plan/panels/WallPanel.vue'
 import { clearSelection, editor, isSelected, OPENING_TOOLS, setSelection, toggleSelection, Tool } from '../plan/editor'
 import { add as addPt, boundsOf, dist, projectOnWall, round3, snapAngle, snapToGrid, sub } from '../plan/geometry'
 import { redo, startHistory, undo } from '../plan/history'
+import { touchPick } from '../plan/touchPick'
 import {
   addOpening, addRoomRect, addWallAt, applyTransform, beginEndpointDrag, beginTransform, clampOffset, copySelection,
   deleteIds, duplicateSelection, expandSelection, getEntity, getWall, moveEndpoint, nearestPoint, nearestWall,
@@ -130,8 +132,10 @@ import { addItem, getItem, scene } from '../scene/store'
 import { ItemKind, Pt, SceneItem, Wall } from '../scene/types'
 
 type Gesture =
-  | { type: 'pan'; sx: number; sy: number; cx: number; cz: number; clearOnTap?: boolean }
-  | { type: 'move'; start: Pt; ids: string[]; session: TransformSession | null; clickId: string | null }
+  // tapSelects: a finger that taps without dragging selects these (an empty list clears the selection).
+  | { type: 'pan'; sx: number; sy: number; cx: number; cz: number; tapSelects?: string[] }
+  // slop: how far (px) the pointer moves before a press becomes a drag; fingers wobble more than mice.
+  | { type: 'move'; start: Pt; ids: string[]; session: TransformSession | null; clickId: string | null; slop: number }
   | { type: 'marquee'; a: Pt; b: Pt; additive: boolean }
   | { type: 'rotate'; pivot: Pt; start: number; session: TransformSession }
   | { type: 'scale'; handle: string; anchor: Pt; ref: Pt; session: TransformSession; w: number; d: number }
@@ -157,7 +161,10 @@ const HINTS: Record<Tool, string> = {
   opening: 'Hover a wall and click to add a doorway (an opening with no door).',
   measure: 'Drag between two points to measure. Snaps to wall ends and corners.'
 }
+const TOUCH_SELECT_HINT = 'Tap to select · drag it to move · drag the floor to look around · pinch to zoom'
 const SNAP_PX = 10
+// How far (screen px) from an item a fingertip can land and still pick it.
+const TOUCH_REACH_PX = 22
 
 export default defineComponent({
   name: 'FloorPlanView',
@@ -382,7 +389,9 @@ export default defineComponent({
       }
       const target = event.target as Element
       const handle = target.closest('[data-handle]')?.getAttribute('data-handle')
-      const id = target.closest('[data-id]')?.getAttribute('data-id') ?? null
+      let id = target.closest('[data-id]')?.getAttribute('data-id') ?? null
+      // Fingers: a near miss still picks the nearest item rather than the room under it.
+      if (event.pointerType === 'touch' && editor.tool === 'select' && !handle) id = touchPick(p, TOUCH_REACH_PX * px.value, editor.selection, id)
       lastDownId = id
       const free = event.altKey
 
@@ -488,14 +497,22 @@ export default defineComponent({
           toggleSelection(id)
           return
         }
+        // A finger on a room or wall that isn't selected moves the map, and a tap selects it: dragging
+        // a whole room by accident was too easy. Once selected, it drags like anything else.
+        const kind = getEntity(id)?.kind
+        if (event.pointerType === 'touch' && !isSelected(id) && (kind === 'room' || kind === 'wall')) {
+          gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz, tapSelects: [id] }
+          panning.value = true
+          return
+        }
         const clickId = isSelected(id) ? id : null
         if (!isSelected(id)) setSelection([id])
-        gesture = { type: 'move', start: p, ids: expandSelection(editor.selection), session: null, clickId }
+        gesture = { type: 'move', start: p, ids: expandSelection(editor.selection), session: null, clickId, slop: event.pointerType === 'touch' ? 8 : 3 }
         return
       }
       // A finger on empty floor pans the plan (a box select needs a mouse); a tap still deselects.
       if (event.pointerType === 'touch') {
-        gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz, clearOnTap: true }
+        gesture = { type: 'pan', sx: event.clientX, sy: event.clientY, cx: editor.view.cx, cz: editor.view.cz, tapSelects: [] }
         panning.value = true
         return
       }
@@ -538,7 +555,7 @@ export default defineComponent({
           const g = gesture
           const raw = sub(p, g.start)
           if (!g.session) {
-            if (Math.hypot(raw.x, raw.z) * editor.view.scale < 3) return
+            if (Math.hypot(raw.x, raw.z) * editor.view.scale < g.slop) return
             g.session = beginTransform(g.ids)
             editor.dragging = true
           }
@@ -639,7 +656,7 @@ export default defineComponent({
       const g = gesture
       gesture = null
       panning.value = false
-      if (g?.type === 'pan' && g.clearOnTap && event && Math.hypot(event.clientX - g.sx, event.clientY - g.sy) < 8) clearSelection()
+      if (g?.type === 'pan' && g.tapSelects && event && Math.hypot(event.clientX - g.sx, event.clientY - g.sy) < 8) setSelection(g.tapSelects)
       if (g?.type === 'move' && !g.session && g.clickId && editor.selection.length > 1) setSelection([g.clickId])
       if (g?.type === 'marquee') {
         const found = entitiesIn(g.a, g.b)
@@ -682,7 +699,7 @@ export default defineComponent({
       if (!e) return null
       return e.kind === 'item' ? 'item' : e.kind === 'wall' ? 'wall' : e.kind === 'opening' ? 'opening' : 'selection'
     })
-    const hint = computed(() => HINTS[editor.tool])
+    const hint = computed(() => (isPhone.value && editor.tool === 'select' ? TOUCH_SELECT_HINT : HINTS[editor.tool]))
 
     // ── Adding items ──────────────────────────────────────────────────────
     const placeInView = (item: SceneItem) => {
@@ -690,7 +707,30 @@ export default defineComponent({
       item.z = round3(editor.view.cz - 1)
       setSelection([item.id])
     }
-    const add = (kind: Exclude<ItemKind, 'prop'>) => placeInView(addItem(kind))
+    // A short "✓ Photo frame added", so a tap in a library visibly did something.
+    const added = ref('')
+    const addedKey = ref(0)
+    let addedTimer: number | undefined
+    const announce = (item: SceneItem) => {
+      added.value = `✓ ${item.name} added`
+      addedKey.value++
+      window.clearTimeout(addedTimer)
+      addedTimer = window.setTimeout(() => { added.value = '' }, 2400)
+    }
+    // Bring a new item on screen if it settled out of view (wall art moves to the nearest wall).
+    const reveal = (item: SceneItem) => {
+      const halfW = editor.size.w / editor.view.scale / 2 - 0.5
+      const halfH = editor.size.h / editor.view.scale / 2 - 0.5
+      if (Math.abs(item.x - editor.view.cx) > halfW || Math.abs(item.z - editor.view.cz) > halfH) {
+        editor.view.cx = item.x
+        editor.view.cz = item.z
+      }
+    }
+    const add = (kind: Exclude<ItemKind, 'prop'>) => {
+      const item = addItem(kind)
+      placeInView(item)
+      announce(item)
+    }
     // From the Elements menu: subjects and cameras are added in view; Light opens the library.
     const onAdd = (kind: string) => {
       setTool('select')
@@ -707,17 +747,23 @@ export default defineComponent({
       clearSelection()
       fit()
     }
-    // Set dressing: the library stays open so several props can be added in a row.
+    // Set dressing: on a computer the library stays open so several props can be added in a row.
+    // On a phone it covers the plan, so it closes to show the new prop, selected and ready to drag.
     const showProps = ref(false)
     const addPropPicked = (defId: string) => {
       const prop = addProp(defId)
       if (!prop) return
       placeInView(prop)
       settleProp(prop, true)
+      if (isPhone.value) showProps.value = false
+      reveal(prop)
+      announce(prop)
     }
     const addLight = (fixtureId: string) => {
-      placeInView(addItem('light', fixtureId))
+      const light = addItem('light', fixtureId)
+      placeInView(light)
       showLibrary.value = false
+      announce(light)
     }
 
     // ── Keyboard ──────────────────────────────────────────────────────────
@@ -792,6 +838,7 @@ export default defineComponent({
     onBeforeUnmount(() => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('keyup', onKeyUp)
+      window.clearTimeout(addedTimer)
       resizeObserver?.disconnect()
     })
 
@@ -818,7 +865,7 @@ export default defineComponent({
     return {
       capture, lineToggle,
       svg, area, editor, setTool, showLibrary, showProps, loadDemo, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
-      onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint, isPhone, panelOpen
+      onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint, isPhone, panelOpen, added, addedKey
     }
   }
 })
@@ -842,6 +889,13 @@ export default defineComponent({
 }
 .scalebar span { position: absolute; left: 0; bottom: 8px; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .hint { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+.added {
+  position: absolute; left: 50%; bottom: 52px; z-index: 8; transform: translateX(-50%); max-width: calc(100% - 32px);
+  padding: 8px 14px; border-radius: 999px; background: #23252c; border: 1px solid var(--accent); color: var(--text);
+  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); animation: added-in 0.18s ease-out;
+}
+@keyframes added-in { from { opacity: 0; transform: translate(-50%, 8px); } }
 .panel {
   width: 280px; flex-shrink: 0; padding: 16px; border-left: 1px solid var(--line); background: var(--panel);
   overflow-y: auto; font-size: 13px;
@@ -856,8 +910,9 @@ export default defineComponent({
 .panel-tab {
   position: absolute; top: 50%; right: 0; z-index: 11; transform: translateY(-50%);
   padding: 16px 6px; font-size: 18px; line-height: 1; border-right: none; border-radius: 8px 0 0 8px;
-  background: var(--panel); transition: right 0.2s ease;
+  background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 700; transition: right 0.2s ease;
 }
+.panel-tab:hover { background: #ffc46e; }
 .panel-tab.open { right: min(280px, 85%); }
 </style>
 

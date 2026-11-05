@@ -39,6 +39,12 @@ import { renderState, Tier, TIERS } from './renderState'
 const PROP_BUILD_BUDGET_MS = 28
 // While subjects move, shadow maps refresh at most this often (ms).
 const SHADOW_MOTION_MS = 150
+// Re-running only the post-processes on the last scene image (see reprocess) scrambled the picture
+// on an iPhone until the camera moved. Safari's WebGL (every iPhone and iPad browser, and Safari on a
+// Mac) redraws in full instead.
+const UA = navigator.userAgent
+const SAFARI_WEBGL = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1) ||
+  (/Safari/.test(UA) && !/Chrome|Chromium|Edg|OPR|Firefox/.test(UA))
 const DEG = Math.PI / 180
 // Widest cone the shadow map covers; wider sources still light, but only shadow inside this.
 const MAX_SHADOW_CONE = 120
@@ -236,7 +242,7 @@ export class LiveScene {
     // A camera's pass list keeps empty slots after a pipeline is swapped (camera change, Performance
     // level); hand Babylon only the live passes, and redraw normally if any isn't ready yet.
     const passes = (cam?._postProcesses?.filter(p => p) ?? []) as NonNullable<NonNullable<typeof cam>['_postProcesses'][number]>[]
-    if (!cam || !passes.length || !this.hasFrame || passes.some(p => !p.isReady())) {
+    if (SAFARI_WEBGL || !cam || !passes.length || !this.hasFrame || passes.some(p => !p.isReady())) {
       this.scene.render()
       return
     }
@@ -579,7 +585,9 @@ export class LiveScene {
     // Ambient = estimated room bounce (tinted by the lights, scaled by the Bounce control) + light
     // from outside (time of day, its own colour temperature). Blackout removes both: direct light only.
     const worldKey = JSON.stringify(doc.world)
-    if (lightsChanged || rebuilt || worldKey !== this.worldKey) {
+    // The outside/bounce fill lights the scene itself, so a change needs a full redraw.
+    const worldChanged = worldKey !== this.worldKey
+    if (lightsChanged || rebuilt || worldChanged) {
       this.worldKey = worldKey
       const bounce = sceneBounce(doc)
       const fill = bounceLux(doc.world, bounce.lux)
@@ -614,7 +622,7 @@ export class LiveScene {
     // Depth (for depth of field) only changes when something moved, not when exposure/WB/ISO change.
     if (rebuilt || subjectsChanged || lightsChanged || cameraMoved || propsChanged) this.entries.forEach(entry => entry.pipeline?.invalidate())
     if (rebuilt) this.applyLayers()
-    const sceneChanged = rebuilt || lightsChanged || subjectsChanged || cameraMoved || specularChanged || !this.hasFrame
+    const sceneChanged = rebuilt || lightsChanged || subjectsChanged || cameraMoved || specularChanged || worldChanged || !this.hasFrame
     if (sceneChanged) {
       this.awaitingReady = true
       this.requestRender()

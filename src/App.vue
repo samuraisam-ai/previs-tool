@@ -10,6 +10,14 @@
       <div class="header-actions">
         <a class="feedback-btn" :href="FEEDBACK_URL" target="_blank" rel="noopener" title="Share feedback">Feedback</a>
         <button :class="['guide-btn', { on: nav.view === 'guide' }]" title="User guide" @click="nav.view = 'guide'">? Guide</button>
+        <button v-if="offerFullscreen" class="full-btn" :title="fullscreen ? 'Exit full screen' : 'Full screen'" :aria-label="fullscreen ? 'Exit full screen' : 'Full screen'" @click="toggleFullscreen">{{ fullscreen ? '⤡' : '⤢' }}</button>
+      </div>
+      <!-- iPhones can't put a web page full screen; a home-screen app opens without Safari's bars. -->
+      <div v-if="homeTip" class="home-tip" role="dialog" aria-label="Full screen on iPhone">
+        <b>Full screen on iPhone</b>
+        <p>In Safari, tap Share <span class="share">⬆︎</span> then <b>Add to Home Screen</b>, and open Previs from your home screen: no browser bars, top or bottom. From Instagram, open the link in Safari first (••• → Open in browser).</p>
+        <p class="small">The home-screen app keeps its own saved work, separate from Safari. Export a production to move it across.</p>
+        <button @click="homeTip = false">Got it</button>
       </div>
     </header>
     <main>
@@ -27,8 +35,10 @@
 </template>
 
 <script lang="ts">
-import { defineComponent } from 'vue'
+import { computed, defineComponent, ref } from 'vue'
 import { nav } from './nav'
+import { setContext, track } from './analytics'
+import { isPhone } from './phone'
 import { captureState } from './setups/capture'
 import { FEEDBACK_URL } from './feedback'
 import MobileNotice from './components/MobileNotice.vue'
@@ -58,7 +68,28 @@ export default defineComponent({
   setup() {
     initSetups().then(ensureSamples)
     openSetFromUrl()
-    return { nav, captureState, FEEDBACK_URL }
+
+    // iPhones ignore the viewport's no-zoom setting for pinches; this stops the page itself zooming
+    // (the plan and the 3D view still pinch, they read the fingers directly).
+    const noZoom = (e: Event) => e.preventDefault()
+    ;['gesturestart', 'gesturechange'].forEach(type => document.addEventListener(type, noZoom, { passive: false }))
+
+    // Full screen on phones: real full screen where the browser allows it (Android), otherwise
+    // (iPhone) how to add the app to the home screen. Not offered when already running from there.
+    const installed = window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || (navigator as { standalone?: boolean }).standalone === true
+    const canFullscreen = !!document.fullscreenEnabled && typeof document.documentElement.requestFullscreen === 'function'
+    const offerFullscreen = computed(() => isPhone.value && !installed)
+    setContext({ display: installed ? 'home screen app' : 'browser' })
+    const fullscreen = ref(false)
+    const homeTip = ref(false)
+    document.addEventListener('fullscreenchange', () => { fullscreen.value = !!document.fullscreenElement })
+    const toggleFullscreen = () => {
+      if (!document.fullscreenElement) track('Full screen', { how: canFullscreen ? 'full screen' : 'home screen tip' })
+      if (!canFullscreen) { homeTip.value = !homeTip.value; return }
+      if (document.fullscreenElement) document.exitFullscreen()
+      else document.documentElement.requestFullscreen().catch(() => { homeTip.value = true })
+    }
+    return { nav, captureState, FEEDBACK_URL, offerFullscreen, fullscreen, homeTip, toggleFullscreen }
   }
 })
 </script>
@@ -79,6 +110,9 @@ html, body, #app {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
+/* The app never scrolls or zooms as a page: panels scroll inside themselves, and only the plan
+   and the 3D view take pinches. */
+html, body { overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
 button, input, select {
   font: inherit;
   color: var(--text);
@@ -101,6 +135,7 @@ input[type='range'] { padding: 0; accent-color: var(--accent); }
   height: 100%;
 }
 header {
+  position: relative;
   height: 48px;
   flex-shrink: 0;
   display: flex;
@@ -112,6 +147,13 @@ header {
 }
 header .brand { white-space: nowrap; }
 header .brand span { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
+/* Phones held sideways: a slim single-row header, so the plan and the shot get the height. */
+@media (max-height: 500px) {
+  header { height: 36px; gap: 12px; padding: 0 10px; }
+  header .brand { font-size: 14px; }
+  header .brand span { display: none; }
+  header button, .feedback-btn { padding: 3px 9px; font-size: 13px; }
+}
 @media (max-width: 640px) {
   header .brand span { display: none; }
   /* Two rows on phones so nothing is pushed off-screen: brand + Feedback/Guide, then the view tabs. */
@@ -140,6 +182,16 @@ nav button.on, .guide-btn.on {
 }
 .feedback-btn:hover { background: #2c2f37; }
 .guide-btn { white-space: nowrap; }
+.full-btn { padding: 3px 9px; font-size: 16px; line-height: 1; }
+.home-tip {
+  position: absolute; top: calc(100% + 6px); right: 8px; z-index: 80; width: min(320px, calc(100vw - 16px)); box-sizing: border-box;
+  padding: 12px 14px; background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); font-size: 13px; line-height: 1.45;
+}
+.home-tip p { margin: 6px 0; }
+.home-tip .small { color: var(--muted); font-size: 12px; }
+.home-tip .share { color: var(--accent); }
+.home-tip button { margin-top: 4px; background: var(--accent); border-color: var(--accent); color: #1a1a1a; font-weight: 600; }
 main {
   flex: 1;
   min-height: 0;

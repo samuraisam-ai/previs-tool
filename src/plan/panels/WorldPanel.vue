@@ -29,7 +29,7 @@
         <span>%</span>
       </div>
     </label>
-    <div class="marks"><span>0</span><span>100% = preset</span><span>200</span></div>
+    <div class="marks"><span>0</span><span>{{ DEFAULT_PERCENT }}% indoors · 100% = full preset</span><span>200</span></div>
 
     <label :class="{ dim: w.blackout }">Colour temperature
       <div class="amount">
@@ -62,7 +62,7 @@ import { computed, defineComponent } from 'vue'
 import { kelvinToSrgb } from '../../library/colour'
 import { scene, sceneBounce } from '../../scene/store'
 import { WorldPreset } from '../../scene/types'
-import { bounceLux, formatLux, WORLD_ORDER, WORLD_PRESETS, worldLux, worldSummary } from '../../scene/world'
+import { bounceLux, DEFAULT_PERCENT, formatLux, WORLD_ORDER, WORLD_PRESETS, worldLux, worldSummary } from '../../scene/world'
 
 export default defineComponent({
   name: 'WorldPanel',
@@ -71,7 +71,7 @@ export default defineComponent({
     const summary = computed(() => worldSummary(scene.world))
     // Choosing a time of day resets it to that preset's level and colour.
     const pick = (id: WorldPreset) => {
-      Object.assign(scene.world, { preset: id, percent: 100, kelvin: WORLD_PRESETS[id].kelvin, blackout: false })
+      Object.assign(scene.world, { preset: id, percent: DEFAULT_PERCENT, kelvin: WORLD_PRESETS[id].kelvin, blackout: false })
     }
     const value = (e: Event) => Number((e.target as HTMLInputElement).value)
     const setPercent = (e: Event) => { const v = value(e); if (isFinite(v)) scene.world.percent = Math.min(200, Math.max(0, v)) }
@@ -81,7 +81,7 @@ export default defineComponent({
     const fill = computed(() => bounceLux(scene.world, estimated.value))
     const outside = computed(() => worldLux(scene.world))
     const swatch = (k: number) => `rgb(${kelvinToSrgb(k).map(c => Math.round(Math.min(1, c) * 255)).join(',')})`
-    return { w, summary, pick, setPercent, setKelvin, setBounce, fill, outside, formatLux, swatch, WORLD_ORDER, WORLD_PRESETS }
+    return { w, summary, pick, setPercent, setKelvin, setBounce, fill, outside, formatLux, swatch, WORLD_ORDER, WORLD_PRESETS, DEFAULT_PERCENT }
   }
 })
 </script>

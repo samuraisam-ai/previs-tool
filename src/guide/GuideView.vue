@@ -100,7 +100,7 @@
         <ul>
           <li><b>Slower laptop?</b> In Live View set <b>Performance → Lite</b>. Big sets build in a moment while "Building set…" shows.</li>
           <li>Your work saves in this browser. <b>Export</b> productions to back them up or share them.</li>
-          <li><b>On a phone?</b> Pinch to zoom the floor plan, drag with one finger to move around it, and tap ⚙ Controls in Live View for the rest of the settings.</li>
+          <li><b>On a phone?</b> Tap something on the floor plan to select it and drag it to move it; drag the floor to look around and pinch to zoom. In Live View, ⚙ Controls has the rest of the settings. For full screen, tap ⤢ (on an iPhone it shows how to add Previs to your home screen).</li>
         </ul>
       </section>
 

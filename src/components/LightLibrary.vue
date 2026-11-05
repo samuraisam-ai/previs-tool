@@ -61,7 +61,8 @@ export default defineComponent({
       ? `${f.lumens.toLocaleString()} lm`
       : `${f.luxAt1m.toLocaleString()} lux@1m`
 
-    onMounted(() => search.value?.focus())
+    // Ready to type on a computer; on a touch screen the keyboard would cover the list.
+    onMounted(() => { if (!window.matchMedia('(pointer: coarse)').matches) search.value?.focus() })
 
     return { query, category, search, results, counts, output, categories: CATEGORY_LABELS, colourLabels: COLOUR_LABELS }
   }
@@ -108,6 +109,7 @@ ul {
   margin: 0;
   padding: 4px 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   flex: 1;
 }
 li {

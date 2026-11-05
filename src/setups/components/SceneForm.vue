@@ -2,7 +2,7 @@
   <div class="scene-form">
     <label class="num">
       Scene
-      <input :value="value.number" placeholder="12" @input="set('number', $event)" />
+      <input :value="value.number" name="scene-number" autocomplete="off" placeholder="12" @input="set('number', $event)" />
     </label>
     <label>
       Int / Ext
@@ -12,7 +12,7 @@
     </label>
     <label class="grow">
       Location
-      <input :value="value.location" placeholder="Kitchen" @input="set('location', $event)" />
+      <input :value="value.location" name="scene-location" autocomplete="off" placeholder="Kitchen" @input="set('location', $event)" />
     </label>
     <label>
       Time of day
@@ -22,7 +22,7 @@
     </label>
     <label class="full">
       What happens
-      <textarea :value="value.synopsis" rows="2" placeholder="Briefly, what happens in this scene" @input="set('synopsis', $event)"></textarea>
+      <textarea :value="value.synopsis" autocomplete="off" rows="2" placeholder="Briefly, what happens in this scene" @input="set('synopsis', $event)"></textarea>
     </label>
   </div>
 </template>

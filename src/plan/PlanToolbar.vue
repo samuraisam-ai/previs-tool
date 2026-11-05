@@ -14,7 +14,7 @@
         <svg viewBox="0 0 24 24"><path :d="ICONS.plus" /></svg><span>Elements</span>
         <svg class="caret" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5" /></svg>
       </button>
-      <div v-if="open" ref="menu" class="menu" role="menu" @keydown="onMenuKey">
+      <div v-if="open" ref="menu" class="menu" role="menu" :style="menuMax ? { maxHeight: `${menuMax}px` } : undefined" @keydown="onMenuKey">
         <section v-for="section in sections" :key="section.title">
           <h6>{{ section.title }}</h6>
           <button
@@ -139,6 +139,13 @@ export default defineComponent({
     const menu = ref<HTMLDivElement | null>(null)
     const menuRoot = ref<HTMLDivElement | null>(null)
     const compact = ref(false)
+    // The menu scrolls inside the plan area instead of running off the bottom (phones, short windows).
+    const menuMax = ref(0)
+    const fitMenu = () => {
+      const area = bar.value?.parentElement
+      if (!area || !menu.value) return
+      menuMax.value = Math.max(160, area.getBoundingClientRect().bottom - menu.value.getBoundingClientRect().top - 22)
+    }
 
     const placing = computed(() => props.tool !== 'select' && props.tool !== 'pan')
     const lineOn = computed(() => !!scene.lineOfAction?.visible)
@@ -159,6 +166,7 @@ export default defineComponent({
       open.value = !open.value
       if (open.value) {
         await nextTick()
+        fitMenu()
         focusItem(0)
       }
     }
@@ -194,7 +202,7 @@ export default defineComponent({
       observer?.disconnect()
     })
 
-    return { open, bar, menu, menuRoot, compact, placing, placingLabel, lineOn, sections, toggle, choose, onMenuKey, ICONS }
+    return { open, bar, menu, menuRoot, compact, menuMax, placing, placingLabel, lineOn, sections, toggle, choose, onMenuKey, ICONS }
   }
 })
 </script>
@@ -262,6 +270,9 @@ svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width:
   border-radius: 10px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
   white-space: normal;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 .menu section + section { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
 .menu h6 { margin: 6px 8px 4px; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }

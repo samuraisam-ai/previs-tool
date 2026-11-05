@@ -4,7 +4,7 @@ import { projectOnWall, uncoveredParts, wallLength } from '../plan/geometry'
 import { cameraPropsFor, makeRoom, makeWall, newId, scene } from '../scene/store'
 import { defaultSubjectProps } from '../subjects/kinematics'
 import { CameraItem, Finish, Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, SubjectItem, SubjectProps, Wall } from '../scene/types'
-import { defaultWorld } from '../scene/world'
+import { DEFAULT_PERCENT, defaultWorld } from '../scene/world'
 import { getDef } from './catalog'
 import { defaultPropProps } from './create'
 import { makeFinish } from './finish'
@@ -380,7 +380,7 @@ function houseDoc(spec: HouseSpec): { doc: object; built: Array<PropItem | null>
   const items: SceneItem[] = [...props, ...cast, ...cams]
   const doc = {
     walls, openings, rooms, items, marks: [], lineOfAction: null,
-    world: { ...defaultWorld(), preset: 'evening', percent: 100, kelvin: 3000 }, activeCameraId: cams[0]?.id ?? null
+    world: { ...defaultWorld(), preset: 'evening', percent: DEFAULT_PERCENT, kelvin: 3000 }, activeCameraId: cams[0]?.id ?? null
   }
   return { doc, built }
 }

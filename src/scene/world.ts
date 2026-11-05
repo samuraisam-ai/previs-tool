@@ -15,6 +15,9 @@ export const WORLD_PRESETS: Record<WorldPreset, { label: string; lux: number; ke
   night: { label: 'Night', lux: 1, kelvin: 7500, note: 'Moonlight (cool by film convention; real ≈ 4100 K)' }
 }
 export const WORLD_ORDER: WorldPreset[] = ['morning', 'day', 'evening', 'night']
+// Picking a time of day starts at this share of its full level: what that light looks like inside a
+// room. At 100% the whole room reads as lit from everywhere.
+export const DEFAULT_PERCENT = 15
 
 // Matches the previous fixed 0.5 lux base fill, so existing scenes look the same.
 export const defaultWorld = (): WorldLight => ({ preset: 'night', percent: 50, kelvin: WORLD_PRESETS.night.kelvin, blackout: false, bounce: 100 })

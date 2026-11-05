@@ -3,8 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <!-- No page zoom: pinching zooms the plan and the 3D view, never the app around them (and
+         maximum-scale stops iPhones zooming in on a text field when it's tapped). -->
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
     <link rel="icon" href="<%= BASE_URL %>favicon.ico">
+    <!-- Added to a phone's home screen it opens full screen, without the browser's bars. -->
+    <link rel="manifest" href="<%= BASE_URL %>manifest.webmanifest">
+    <link rel="apple-touch-icon" href="<%= BASE_URL %>icons/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Previs">
+    <meta name="theme-color" content="#17181c">
     <meta name="description" content="Previs Tool by Leverage AI: plan lighting, camera and blocking on a floor plan, see it through a real camera, and build setups and storyboards for pre-production.">
     <title><%= htmlWebpackPlugin.options.title %></title>
   </head>

@@ -6,7 +6,7 @@
       <p v-if="setLink.state === 'failed'" class="failed">{{ setLink.message }}</p>
       <p>Building sets needs a tablet, laptop or desktop. On a phone you can still walk around a furnished set in 3D and look through the camera.</p>
       <button class="primary" @click="lookAround">Look around a sample set</button>
-      <button class="secondary" @click="dismiss">Continue to the full app</button>
+      <button class="secondary" @click="continueToApp">Continue to the full app</button>
     </div>
   </div>
 </template>
@@ -14,6 +14,7 @@
 <script lang="ts">
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
+import { track } from '../analytics'
 import { isPhone } from '../phone'
 import { openSet, setLink } from '../sets'
 
@@ -60,9 +61,15 @@ export default defineComponent({
       }
     }
 
+    // Which way phone visitors go from here is the first fork in the funnel.
     function lookAround() {
+      track('Phone notice', { choice: 'sample set' })
       dismiss()
       openSet('house-1bed')
+    }
+    function continueToApp() {
+      track('Phone notice', { choice: 'full app' })
+      dismiss()
     }
 
     onMounted(() => {
@@ -79,7 +86,7 @@ export default defineComponent({
       window.visualViewport?.removeEventListener('scroll', fitToScreen)
     })
 
-    return { show, box, dismiss, lookAround, setLink }
+    return { show, box, dismiss, lookAround, continueToApp, setLink }
   }
 })
 </script>

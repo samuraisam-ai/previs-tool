@@ -38,6 +38,7 @@
 
       <!-- Right-hand buttons -->
       <div class="side-buttons">
+        <button v-if="below" class="settings-toggle" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">{{ settingsOpen ? '▾ SETTINGS' : '▸ SETTINGS' }}</button>
         <button :class="{ on: menuOpen }" @click="menuOpen = !menuOpen">MENU</button>
         <button @click="d.osd = false" title="Hide display (D)">DISP</button>
         <button :class="['rec-btn', { on: p.recording }]" @click="toggleRec">REC</button>
@@ -51,8 +52,9 @@
       </div>
 
       <!-- The dock is invisible on big screens (its parts sit on the image). On a portrait phone it
-           moves the parameter grid, the control popup and the scopes into the space below the image. -->
-      <div class="dock" :style="dockStyle">
+           moves the parameter row, the control popup and the scopes into the space below the image,
+           and SETTINGS folds it all away. -->
+      <div v-show="!below || settingsOpen" class="dock" :style="dockStyle">
       <ScopeDock v-if="d.scopes.length && (!compact || below)" class="scopes" :frame="frameCapture" :scopes="d.scopes" />
 
       <!-- Control popup for the selected parameter -->
@@ -105,8 +107,10 @@
         </template>
       </div>
 
-      <!-- Parameter bar -->
-      <div class="bottom-bar">
+      <!-- Parameter bar (one sideways-scrolling row on a portrait phone, with arrows when there's more) -->
+      <div class="strip">
+      <button v-if="below" class="arrow" aria-label="Earlier settings" :disabled="!canLeft" @click="scrollCells(-1)">‹</button>
+      <div ref="cellBar" class="bottom-bar" @scroll="updateArrows">
         <button v-for="cell in cells" :key="cell.id" :class="['cell', { selected: selected === cell.id, off: cell.off }]" @click="select(cell.id)">
           <small>{{ cell.label }}</small>
           <span>{{ cell.value }}</span>
@@ -117,6 +121,8 @@
           <span>{{ mmText }}</span>
           <div class="mm-scale"><i :style="{ left: `${50 + Math.max(-2, Math.min(2, mm)) * 25}%` }"></i></div>
         </div>
+      </div>
+      <button v-if="below" class="arrow" aria-label="More settings" :disabled="!canRight" @click="scrollCells(1)">›</button>
       </div>
       </div>
 
@@ -159,7 +165,7 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, onBeforeUnmount, onMounted, PropType, ref, watch } from 'vue'
+import { computed, defineComponent, nextTick, onBeforeUnmount, onMounted, PropType, ref, watch } from 'vue'
 import RingDial from '../controls/RingDial.vue'
 import AngleWheel from '../controls/AngleWheel.vue'
 import TiltWheel from '../controls/TiltWheel.vue'
@@ -436,12 +442,35 @@ export default defineComponent({
     const spaceBelow = computed(() => (props.area ? props.area.height - props.rect.y - props.rect.height : 0))
     const below = computed(() => compact.value && spaceBelow.value >= 150)
     const dockStyle = computed(() => (below.value ? { maxHeight: `${spaceBelow.value - 8}px` } : {}))
+    const settingsOpen = ref(true)
+    // The sideways row's arrows only light up when there's more to scroll to that way.
+    const cellBar = ref<HTMLDivElement | null>(null)
+    const canLeft = ref(false)
+    const canRight = ref(false)
+    const updateArrows = () => {
+      const el = cellBar.value
+      if (!el) return
+      canLeft.value = el.scrollLeft > 2
+      canRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+    }
+    const scrollCells = (dir: number) => {
+      const el = cellBar.value
+      if (!el) return
+      const from = el.scrollLeft
+      const to = Math.max(0, Math.min(el.scrollWidth - el.clientWidth, from + dir * el.clientWidth * 0.7))
+      el.scrollTo({ left: to, behavior: 'smooth' })
+      // Some browsers drop a smooth scroll (e.g. mid scroll-snap); then just jump there.
+      window.setTimeout(() => { if (el.scrollLeft === from) el.scrollLeft = to }, 400)
+    }
+    watch([below, settingsOpen, () => props.rect.width, () => d.value.osd, () => d.value.mm], () => { nextTick(() => updateArrows()) })
+    onMounted(() => { nextTick(() => updateArrows()) })
 
     return {
       cam, p, d, body, lens, rate, profile, subjects, focusM, dof, selected, menuOpen, select, stepParam,
       neighbours, dragStart, dragMove, dragEnd, clampIris, clampIso, clampShutter, setShutterMode,
       setManualFocus, track, toggleScope, mm, mmText, mmClass, cells, frame, gridLines, toggleRec, timecode,
       onImageWheel, rectStyle, formatDistance, lenses: LENSES, heading, setHeading, compact, below, dockStyle,
+      settingsOpen, cellBar, canLeft, canRight, updateArrows, scrollCells,
       frameLineOptions: ['off', '2.39', '2.00', '1.85', '4:3', '1:1', '9:16', '4:5'],
       scopeOptions: [
         { id: 'histogram', label: 'Histogram' }, { id: 'waveform', label: 'Waveform (RGB overlay)' },
@@ -552,7 +581,7 @@ button { font-family: inherit; text-shadow: none; }
 .menu h5 { margin: 6px 0 0; font-size: 10px; letter-spacing: 1.5px; color: #ffb547; }
 
 /* ── Phones ──────────────────────────────────────────────────────────────── */
-.dock { display: contents; }
+.dock, .strip { display: contents; }
 .compact .top-bar { gap: 10px; font-size: 11px; }
 .compact .menu { left: 8px; right: 8px; width: auto; top: 28px; bottom: 8px; }
 .compact .scroller span { width: 44px; }
@@ -566,15 +595,23 @@ button { font-family: inherit; text-shadow: none; }
 /* Held upright: buttons in a row above the image, the rest in the dock below it. */
 .below .side-buttons { top: auto; bottom: calc(100% + 6px); left: 0; right: 0; flex-direction: row; justify-content: flex-end; }
 .below .side-buttons .still-btn { margin-top: 0; margin-left: 6px; }
+.below .side-buttons .settings-toggle { margin-right: auto; color: #ffb547; border-color: rgba(255, 181, 71, 0.5); }
 .below .dock {
   position: absolute; top: 100%; left: 0; right: 0; display: flex; flex-direction: column; gap: 6px;
   padding-top: 6px; overflow-y: auto;
 }
+.below .strip { order: 1; display: flex; align-items: stretch; background: rgba(20, 20, 24, 0.9); border-radius: 6px; }
 .below .bottom-bar {
-  position: static; order: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px;
-  background: rgba(20, 20, 24, 0.9); border-radius: 6px;
+  position: static; flex: 1; min-width: 0; display: flex; gap: 2px; padding: 4px 0; background: none;
+  overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-x;
 }
-.below .cell { padding: 4px 6px; }
+.below .bottom-bar::-webkit-scrollbar { display: none; }
+.below .cell { flex: 0 0 auto; min-width: 70px; padding: 4px 8px; scroll-snap-align: start; }
+.arrow {
+  flex: 0 0 30px; padding: 0; border: none; border-radius: 6px; background: transparent; color: #ffb547;
+  font-size: 22px; line-height: 1; text-shadow: none;
+}
+.arrow:disabled { opacity: 0.2; }
 .below .control-pop { position: static; order: 2; transform: none; align-self: center; }
 .below .scopes { position: static; order: 3; align-self: center; }
 .menu label { display: flex; flex-direction: column; gap: 3px; color: rgba(255, 255, 255, 0.7); }
