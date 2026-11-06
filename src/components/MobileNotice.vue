@@ -2,11 +2,11 @@
   <div v-if="show" class="backdrop" :style="box">
     <div class="card" role="dialog" aria-modal="true" aria-labelledby="mobile-notice-title">
       <div class="icon" aria-hidden="true">📱</div>
-      <h3 id="mobile-notice-title">Best on a bigger screen</h3>
+      <h3 id="mobile-notice-title">Plan your shot</h3>
       <p v-if="setLink.state === 'failed'" class="failed">{{ setLink.message }}</p>
-      <p>Building sets needs a tablet, laptop or desktop. On a phone you can still walk around a furnished set in 3D and look through the camera.</p>
-      <button class="primary" @click="lookAround">Look around a sample set</button>
-      <button class="secondary" @click="continueToApp">Continue to the full app</button>
+      <p>Draw the room, dress it, place your cast, cameras and lights, then look through the lens. It all works on your phone; a bigger screen just gives you more room.</p>
+      <button class="primary" @click="createSet">Create a new set</button>
+      <button class="secondary" @click="lookAround">Start with a sample set</button>
     </div>
   </div>
 </template>
@@ -15,6 +15,7 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { track } from '../analytics'
+import { nav } from '../nav'
 import { isPhone } from '../phone'
 import { openSet, setLink } from '../sets'
 
@@ -67,9 +68,11 @@ export default defineComponent({
       dismiss()
       openSet('house-1bed')
     }
-    function continueToApp() {
-      track('Phone notice', { choice: 'full app' })
+    // Straight into the Floor Plan to build their own.
+    function createSet() {
+      track('Phone notice', { choice: 'new set' })
       dismiss()
+      nav.view = 'plan'
     }
 
     onMounted(() => {
@@ -86,7 +89,7 @@ export default defineComponent({
       window.visualViewport?.removeEventListener('scroll', fitToScreen)
     })
 
-    return { show, box, dismiss, lookAround, continueToApp, setLink }
+    return { show, box, dismiss, lookAround, createSet, setLink }
   }
 })
 </script>
