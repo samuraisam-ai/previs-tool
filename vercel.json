@@ -1,6 +1,19 @@
 {
   "redirects": [
-    { "source": "/ig", "destination": "/?utm_source=instagram&utm_medium=bio", "permanent": false },
-    { "source": "/ig/:day", "destination": "/?set=:day&utm_source=instagram&utm_medium=social&utm_campaign=30days&utm_content=:day", "permanent": false }
+    {
+      "source": "/me",
+      "destination": "/?me=1",
+      "permanent": false
+    },
+    {
+      "source": "/ig",
+      "destination": "/?utm_source=instagram&utm_medium=bio",
+      "permanent": false
+    },
+    {
+      "source": "/ig/:day",
+      "destination": "/?set=:day&utm_source=instagram&utm_medium=social&utm_campaign=30days&utm_content=:day",
+      "permanent": false
+    }
   ]
 }

@@ -23,6 +23,24 @@ let posthog: PostHog | null = null
 // Events tracked before PostHog has loaded (it loads after the app, to keep start-up fast).
 const queue: Array<[string, Properties]> = []
 
+// Craig's own devices: opening previs-tool.vercel.app/me once on a device marks it (kept on that
+// device), and every event from it then carries internal: true, so the dashboards can leave him
+// out or show his visits on their own. /?me=0 unmarks the device.
+const TEAM_KEY = 'previs.team-device'
+const teamDevice = (() => {
+  try {
+    const url = new URL(window.location.href)
+    const me = url.searchParams.get('me')
+    if (me !== null) {
+      if (me === '0') localStorage.removeItem(TEAM_KEY)
+      else localStorage.setItem(TEAM_KEY, '1')
+      url.searchParams.delete('me')
+      history.replaceState(history.state, '', url.toString())
+    }
+    return localStorage.getItem(TEAM_KEY) === '1'
+  } catch { return false }
+})()
+
 const device = () => (isPhone.value ? 'phone' : window.matchMedia('(pointer: coarse)').matches ? 'tablet' : 'desktop')
 
 export function track(event: string, props: Properties = {}): void {
@@ -74,7 +92,12 @@ export function initAnalytics(): void {
         capture_pageview: true,
         autocapture: true,
         capture_exceptions: true,
-        session_recording: { maskAllInputs: true }
+        session_recording: { maskAllInputs: true },
+        // Tag every event from Craig's own devices, the first page view included.
+        before_send: event => {
+          if (event && teamDevice) event.properties = { ...event.properties, internal: true }
+          return event
+        }
       })
       ph.register({ device: device() })
       posthog = ph
