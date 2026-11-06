@@ -57,5 +57,7 @@ const LOUNGE_NIGHT: HouseSpec = {
 }
 
 export const CAMPAIGN_SETS: Record<string, CampaignSet> = {
-  'lounge-night': { title: 'Lounge at night', view: 'Camera A', spec: LOUNGE_NIGHT }
+  'lounge-night': { title: 'Lounge at night', view: 'Camera A', spec: LOUNGE_NIGHT },
+  // Day 1 of 30 Days of Previs used the lounge.
+  d01: { title: 'Lounge at night', view: 'Camera A', spec: LOUNGE_NIGHT }
 }
