@@ -106,7 +106,7 @@
 
       <section>
         <h2>What we measure</h2>
-        <p>To learn what to improve, Previs Tool records how the app is used: which views and tools people open, what they add to a set, and recordings of sessions with anything typed hidden. Visits are anonymous, there are no accounts and no cookies, and your sets and productions never leave your browser unless you export them. An ad blocker that blocks this simply turns it off; the app works the same.</p>
+        <p>To learn what to improve, Previs Tool records how the app is used: which views and tools people open, what they add to a set, the sets people build (rooms, lights, cameras and props; not uploaded images or notes), and recordings of sessions with anything typed hidden. Visits are anonymous, there are no accounts and no cookies, and your productions, notes and images never leave your browser unless you export them. An ad blocker that blocks this simply turns it off; the app works the same.</p>
       </section>
     </article>
   </div>

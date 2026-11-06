@@ -5,6 +5,7 @@ import { nav } from './nav'
 import { isPhone } from './phone'
 import { editor } from './plan/editor'
 import { playback } from './plan/blocking'
+import { snapshotScene } from './plan/history'
 import { scene } from './scene/store'
 import { SceneItem } from './scene/types'
 
@@ -26,9 +27,31 @@ const device = () => (isPhone.value ? 'phone' : window.matchMedia('(pointer: coa
 
 export function track(event: string, props: Properties = {}): void {
   vercelTrack(event, props as Record<string, string | number | boolean | null>)
+  if (EDITS.has(event)) edited = true
   if (!ENABLED) return
   if (posthog) posthog.capture(event, props)
   else queue.push([event, props])
+  if (event === 'Capture saved' || event === 'Production exported') shareSet(event)
+}
+
+// ── What people build ────────────────────────────────────────────────────
+// The set itself (walls, rooms, props, lights, cameras, cast; never uploaded images or setup notes)
+// goes to PostHog when someone captures or exports, or leaves after building something, so it can
+// be opened in Previs later. PostHog only (it's too big for Vercel's events), once per distinct set.
+const EDITS = new Set(['Item added', 'Tool picked', 'Set edited', 'Capture saved', 'Production exported'])
+const MAX_SET_CHARS = 300000
+let edited = false
+let lastShared = ''
+function shareSet(reason: string): void {
+  if (!ENABLED || !posthog || !edited) return
+  const json = snapshotScene()
+  if (json === lastShared || json.length > MAX_SET_CHARS) return
+  lastShared = json
+  const count = (kind: string) => scene.items.filter(i => i.kind === kind).length
+  posthog.capture('Set built', {
+    reason, scene: json, rooms: scene.rooms.length, walls: scene.walls.length,
+    props: count('prop'), lights: count('light'), cameras: count('camera'), cast: count('subject')
+  }, reason === 'left' ? { transport: 'sendBeacon' } : undefined)
 }
 
 // Facts about this visitor's setup that should ride along with every event (e.g. the GPU tier).
@@ -69,6 +92,8 @@ function watchApp(): void {
   watch(() => nav.view, view => track('View opened', { view }))
   watch(() => editor.tool, tool => { if (tool !== 'select') track('Tool picked', { tool }) })
   watch(() => playback.playing, playing => { if (playing) track('Blocking played', { marks: scene.marks.length }) })
+  watch(() => editor.dragging, dragging => { if (dragging) edited = true })
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') shareSet('left') })
 
   // Things added to the set. A burst (opening a set, a sample or the demo house) counts as one load.
   let known = new Set(scene.items.map(i => i.id))
