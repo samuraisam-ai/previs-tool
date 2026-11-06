@@ -1,9 +1,9 @@
 import { loadScene } from '../plan/history'
 import { openingDefaults } from '../plan/ops'
 import { projectOnWall, uncoveredParts, wallLength } from '../plan/geometry'
-import { cameraPropsFor, makeRoom, makeWall, newId, scene } from '../scene/store'
+import { cameraPropsFor, lightPropsFor, makeRoom, makeWall, newId, scene } from '../scene/store'
 import { defaultSubjectProps } from '../subjects/kinematics'
-import { CameraItem, Finish, Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, SubjectItem, SubjectProps, Wall } from '../scene/types'
+import { CameraItem, CameraProps, Finish, LightItem, Opening, OpeningKind, PropItem, Pt, RoomArea, SceneItem, SubjectItem, SubjectProps, Wall, WorldLight } from '../scene/types'
 import { DEFAULT_PERCENT, defaultWorld } from '../scene/world'
 import { getDef } from './catalog'
 import { defaultPropProps } from './create'
@@ -32,8 +32,10 @@ interface RoomSpec { name: string; r: Rect; floor: FinishSpec; walls?: FinishSpe
 type OpeningSpec = [OpeningKind, number, number, number?, number?]
 interface P { id: string; x: number; z: number; r?: number; o?: { [k: string]: OptionValue }; s?: { w?: number; d?: number; h?: number }; f?: { [slot: string]: Partial<Finish> }; name?: string; e?: number; light?: boolean }
 interface CastSpec { name: string; x: number; z: number; r: number; height: number; props?: Partial<SubjectProps> }
-interface CamSpec { name: string; x: number; z: number; r: number; height: number; lens: string; subject: number }
-export interface HouseSpec { rooms: RoomSpec[]; openings: OpeningSpec[]; props: P[]; cast: CastSpec[]; cameras: CamSpec[] }
+interface CamSpec { name: string; x: number; z: number; r: number; height: number; lens: string; subject: number; tilt?: number; settings?: Partial<CameraProps> }
+// A Nanlite fixture on a stand: r is where it points (heading, 0 = +z), tilt is degrees below level.
+interface LightSpec { name: string; fixture: string; modifier?: string; x: number; z: number; r: number; height: number; tilt?: number; dimmer: number; cct: number }
+export interface HouseSpec { rooms: RoomSpec[]; openings: OpeningSpec[]; props: P[]; cast: CastSpec[]; cameras: CamSpec[]; lights?: LightSpec[]; world?: Partial<WorldLight> }
 
 const ROOMS: RoomSpec[] = [
   { name: 'Living room', r: [-7, -5, 0, 0], floor: { material: 'wood', colour: '#8a5a3a', colour2: '#6e4429', pattern: 'planks', scale: 1.1 }, walls: { material: 'painted', colour: '#e9e2d4' } },
@@ -375,12 +377,20 @@ function houseDoc(spec: HouseSpec): { doc: object; built: Array<PropItem | null>
   const cams: CameraItem[] = spec.cameras.map(c => {
     const cam: CameraItem = { id: newId('camera'), kind: 'camera', name: c.name, x: c.x, z: c.z, rotationY: c.r, height: c.height, props: cameraPropsFor(cast[c.subject]?.id ?? null) }
     cam.props.lensId = c.lens
+    if (c.tilt !== undefined) cam.props.tilt = c.tilt
+    if (c.settings) Object.assign(cam.props, c.settings)
     return cam
   })
-  const items: SceneItem[] = [...props, ...cast, ...cams]
+  const lights: LightItem[] = (spec.lights ?? []).map(l => {
+    const props = lightPropsFor(l.fixture)
+    if (l.modifier) props.modifierId = l.modifier
+    Object.assign(props, { dimmer: l.dimmer, cct: l.cct, tilt: l.tilt ?? 0 })
+    return { id: newId('light'), kind: 'light', name: l.name, x: l.x, z: l.z, rotationY: l.r, height: l.height, props }
+  })
+  const items: SceneItem[] = [...props, ...cast, ...cams, ...lights]
   const doc = {
     walls, openings, rooms, items, marks: [], lineOfAction: null,
-    world: { ...defaultWorld(), preset: 'evening', percent: DEFAULT_PERCENT, kelvin: 3000 }, activeCameraId: cams[0]?.id ?? null
+    world: { ...defaultWorld(), preset: 'evening', percent: DEFAULT_PERCENT, kelvin: 3000, ...spec.world }, activeCameraId: cams[0]?.id ?? null
   }
   return { doc, built }
 }

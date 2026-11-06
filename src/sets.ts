@@ -52,6 +52,15 @@ export async function openSet(slug: string): Promise<void> {
     fail(slug, 'This set link is not valid. Check that it was copied in full.')
     return
   }
+  // Campaign sets are built in code (src/props/campaignSets.ts), loaded only when one is asked for.
+  const built = await import('./props/campaignSets').then(m => m.CAMPAIGN_SETS[slug]).catch(() => undefined)
+  if (built) {
+    Object.assign(setLink, { slug, title: built.title, state: 'loading', message: '', viewId: null })
+    const { buildHouse } = await import('./props/demoHouse')
+    buildHouse(built.spec)
+    opened(slug, built.title, built.view)
+    return
+  }
   const source = sourceFor(slug)
   Object.assign(setLink, { slug, title: source.title, state: 'loading', message: '', viewId: null })
   let file: SetFile
@@ -73,13 +82,13 @@ export async function openSet(slug: string): Promise<void> {
   }
   // One undo step, like opening a setup, so the previous scene is one Undo away.
   loadScene(JSON.stringify(doc))
-  const wanted = isSceneDoc(file) ? undefined : file.view
-  const camera = wanted && wanted !== 'orbit' ? scene.items.find(i => i.kind === 'camera' && i.name === wanted) : undefined
-  Object.assign(setLink, {
-    title: (!isSceneDoc(file) && file.title) || source.title || slug,
-    state: 'open',
-    viewId: camera?.id ?? null
-  })
+  opened(slug, (!isSceneDoc(file) && file.title) || source.title || slug, isSceneDoc(file) ? undefined : file.view)
+}
+
+// The set is in the scene: look through the camera it names (or orbit) in the Live View.
+function opened(slug: string, title: string, view: string | undefined): void {
+  const camera = view && view !== 'orbit' ? scene.items.find(i => i.kind === 'camera' && i.name === view) : undefined
+  Object.assign(setLink, { title, state: 'open', viewId: camera?.id ?? null })
   nav.view = 'live'
   track('Set opened', { set: slug, device: device() })
   watchFirstEdit(slug)
