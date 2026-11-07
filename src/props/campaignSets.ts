@@ -56,7 +56,55 @@ const LOUNGE_NIGHT: HouseSpec = {
   world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 30 }
 }
 
+// ── Study at dusk, hallway behind (Day 2: "Empty floor → lit set") ─────────
+// The lounge mirrored: Maya on the left third, key and edge on her far side (frame left, out of
+// frame), motivated by the study window. A PavoTube hidden in the hallway paints its back wall.
+//   z 6 ┌─────────────────────┐
+//       │      Hallway   lamp │  console + lit lamp + painting, seen through the doorway
+//  4.2  ├───────────┐    ┌────┤  doorway at x 2.5–3.7: right of Maya in frame
+//  win  │edge sofa         flag│
+//       │key   Maya          │
+//     0 └─────────────────────┘  Camera A front-right on a 50mm
+//      x 0                   5
+const D02_MAYA: [number, number] = [2.6, 3.0]
+const D02_CAM: [number, number] = [4.0, 0.5]
+const D02_KEY: [number, number] = [0.6, 2.2]
+const D02_EDGE: [number, number] = [0.4, 3.9]
+const D02_TUBE: [number, number] = [4.6, 4.6]
+
+const STUDY_DUSK: HouseSpec = {
+  rooms: [
+    { name: 'Study', r: [0, 0, 5, 4.2], floor: { material: 'wood', colour: '#4a3324', colour2: '#3a281c', pattern: 'herringbone', scale: 0.8 }, walls: { material: 'painted', colour: '#5f6a63' } },
+    { name: 'Hallway', r: [0, 4.2, 5, 6], floor: { material: 'wood', colour: '#6e4a32', colour2: '#573a27', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#a39a8a' } }
+  ],
+  openings: [
+    ['opening', 3.1, 4.2, 1.2],
+    ['window', 0, 2.2, 1.4],
+    ['door', 5, 5.1]
+  ],
+  props: [
+    { id: 'rug', x: 2.2, z: 2.8, r: 90, s: { w: 2.2, d: 1.5 }, f: { rug: { colour: '#5e1f24', colour2: '#b0802c', pattern: 'geometric', scale: 0.7 } } },
+    { id: 'sofa', x: 1.3, z: 3.75, r: 180, o: { seats: 2, pillows: 1 }, f: { upholstery: { material: 'leather', colour: '#6b3a22' }, cushions: { material: 'leather', colour: '#6b3a22' } } },
+    // Hallway, seen through the doorway: the practical and the hidden tube paint its back wall.
+    { id: 'console-table', x: 3.2, z: 5.8 },
+    { id: 'table-lamp', x: 2.8, z: 5.8, light: true },
+    { id: 'painting', x: 3.3, z: 5.95, e: 1.5, s: { w: 0.6, h: 0.75 }, f: { canvas: { pattern: 'marble', colour: '#e6d8bf', colour2: '#33456b', scale: 0.6 } } },
+    // Negative fill: a black flag on Maya's camera side, just out of frame right.
+    { id: 'panel', name: 'Negative fill (black flag)', x: 4.1, z: 2.7, r: aim([4.1, 2.7], D02_MAYA), s: { w: 1.0, h: 1.8 }, f: { surface: { material: 'fabric', colour: '#111111' } } }
+  ],
+  cast: [{ name: 'Maya', x: D02_MAYA[0], z: D02_MAYA[1], r: 205, height: 1.7, props: { pose: 'relaxed' } }],
+  cameras: [{ name: 'Camera A', x: D02_CAM[0], z: D02_CAM[1], r: aim(D02_CAM, [2.9, 3.0]), height: 1.5, lens: 'aizu-50', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
+  lights: [
+    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D02_KEY[0], z: D02_KEY[1], r: aim(D02_KEY, D02_MAYA), height: 2.2, tilt: 12, dimmer: 7, cct: 4300 },
+    { name: 'Edge', fixture: 'forza-60b-ii', modifier: 'fl-11', x: D02_EDGE[0], z: D02_EDGE[1], r: aim(D02_EDGE, D02_MAYA), height: 2.2, tilt: 14, dimmer: 50, cct: 3600 },
+    { name: 'Hall wash', fixture: 'pavotube-ii-30c', x: D02_TUBE[0], z: D02_TUBE[1], r: aim(D02_TUBE, [3.2, 6]), height: 1.0, dimmer: 15, cct: 3200 }
+  ],
+  world: { preset: 'evening', percent: 15, kelvin: 5600, blackout: false, bounce: 30 }
+}
+
 export const CAMPAIGN_SETS: Record<string, CampaignSet> = {
+  // Day 2: built from an empty floor in the Reel.
+  d02: { title: 'Study at dusk', view: 'Camera A', spec: STUDY_DUSK },
   'lounge-night': { title: 'Lounge at night', view: 'Camera A', spec: LOUNGE_NIGHT },
   // Day 1 of 30 Days of Previs used the lounge.
   d01: { title: 'Lounge at night', view: 'Camera A', spec: LOUNGE_NIGHT }
