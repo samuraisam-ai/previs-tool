@@ -68,8 +68,9 @@ const LOUNGE_NIGHT: HouseSpec = {
 //      x 0                   5
 const D02_MAYA: [number, number] = [2.6, 3.0]
 const D02_CAM: [number, number] = [4.0, 0.5]
-const D02_KEY: [number, number] = [0.6, 2.2]
-const D02_EDGE: [number, number] = [0.4, 3.9]
+// Key about 70° off the lens axis on her far side (was ~97°): wraps onto the face, still shadow side.
+const D02_KEY: [number, number] = [1.23, 1.41]
+const D02_EDGE: [number, number] = [0.25, 3.8]
 const D02_TUBE: [number, number] = [4.6, 4.6]
 
 const STUDY_DUSK: HouseSpec = {
@@ -92,8 +93,8 @@ const STUDY_DUSK: HouseSpec = {
     // Negative fill: a black flag on Maya's camera side, just out of frame right.
     { id: 'panel', name: 'Negative fill (black flag)', x: 4.1, z: 2.7, r: aim([4.1, 2.7], D02_MAYA), s: { w: 1.0, h: 1.8 }, f: { surface: { material: 'fabric', colour: '#111111' } } }
   ],
-  cast: [{ name: 'Maya', x: D02_MAYA[0], z: D02_MAYA[1], r: 205, height: 1.7, props: { pose: 'relaxed' } }],
-  cameras: [{ name: 'Camera A', x: D02_CAM[0], z: D02_CAM[1], r: aim(D02_CAM, [2.9, 3.0]), height: 1.5, lens: 'aizu-50', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
+  cast: [{ name: 'Maya', x: D02_MAYA[0], z: D02_MAYA[1], r: 188, height: 1.7, props: { pose: 'relaxed' } }],
+  cameras: [{ name: 'Camera A', x: D02_CAM[0], z: D02_CAM[1], r: aim(D02_CAM, [2.75, 3.0]), height: 1.5, lens: 'aizu-50', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
   lights: [
     { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D02_KEY[0], z: D02_KEY[1], r: aim(D02_KEY, D02_MAYA), height: 2.2, tilt: 12, dimmer: 7, cct: 4300 },
     { name: 'Edge', fixture: 'forza-60b-ii', modifier: 'fl-11', x: D02_EDGE[0], z: D02_EDGE[1], r: aim(D02_EDGE, D02_MAYA), height: 2.2, tilt: 14, dimmer: 50, cct: 3600 },
