@@ -104,13 +104,13 @@ const STUDY_DUSK: HouseSpec = {
 }
 
 // ── Bedroom at night, landing behind (Day 3: "One light. Five modifiers.") ──
-// One Forza 300B II key, nothing else; the Reel swaps its modifier (bare, reflector, octa, lantern, fresnel).
+// One Forza 300B II key plus a fixed edge (Forza 60B II); the Reel swaps the key's modifier (bare, reflector, octa, lantern, fresnel).
 // The landing shows through the doorway behind Maya: a desk with a lit table lamp and a laptop, and a
 // sconce on its back wall. The key sits high, about 60° off the lens axis, so the light wraps (Rembrandt).
 //   z 6 ┌─────────────────────┐
 //       │      Landing  desk  │  desk + lamp + painting, seen through the doorway
 //  4.4  ├─────────┐    ┌──────┤  doorway at x 2.3–3.5: beside Maya in frame
-//       │bed                  │
+//       │bed           edge   │
 //       │bed        Maya      │
 //       │flag            key  │
 //     0 └─────────────────────┘  Camera A in the front corner on a 75mm, a little high, tilted down
@@ -118,6 +118,8 @@ const STUDY_DUSK: HouseSpec = {
 const D03_MAYA: [number, number] = [2.8, 2.8]
 const D03_CAM: [number, number] = [1.2, 0.2]
 const D03_LAMP: [number, number] = [3.35, 5.9]
+// Edge on her far side, behind her: it stays the same while the key's modifier changes.
+const D03_EDGE: [number, number] = [4.4, 3.6]
 // Key about 60° off the lens axis and higher (was ~70°, level): towards Rembrandt, the light wraps across the face.
 const D03_KEY: [number, number] = [3.44, 1.33]
 
@@ -150,7 +152,8 @@ const BEDROOM_NIGHT: HouseSpec = {
   cast: [{ name: 'Maya', x: D03_MAYA[0], z: D03_MAYA[1], r: 205, height: 1.7, props: { pose: 'relaxed' } }],
   cameras: [{ name: 'Camera A', x: D03_CAM[0], z: D03_CAM[1], r: 26, height: 1.75, tilt: 4, lens: 'aizu-75', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
   lights: [
-    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D03_KEY[0], z: D03_KEY[1], r: aim(D03_KEY, D03_MAYA), height: 2.8, tilt: 37, dimmer: 8, cct: 4300 }
+    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D03_KEY[0], z: D03_KEY[1], r: aim(D03_KEY, D03_MAYA), height: 2.8, tilt: 37, dimmer: 8, cct: 4300 },
+    { name: 'Edge', fixture: 'forza-60b-ii', modifier: 'fl-11', x: D03_EDGE[0], z: D03_EDGE[1], r: aim(D03_EDGE, D03_MAYA), height: 2.2, tilt: 18, dimmer: 100, cct: 3600 }
   ],
   world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 45 }
 }
