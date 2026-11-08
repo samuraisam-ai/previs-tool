@@ -94,6 +94,18 @@ function opened(slug: string, title: string, view: string | undefined): void {
   watchFirstEdit(slug)
 }
 
+// "New plan" leaves the set behind: the set bar goes and later edits no longer count as edits to it.
+export function closeSet(): void {
+  stopEditWatch?.()
+  stopEditWatch = null
+  Object.assign(setLink, { slug: '', title: '', state: 'none', message: '', viewId: null })
+  const url = new URL(window.location.href)
+  if (url.searchParams.has('set')) {
+    url.searchParams.delete('set')
+    history.replaceState(null, '', url)
+  }
+}
+
 function fail(slug: string, message: string): void {
   Object.assign(setLink, { slug, state: 'failed', message })
   track('Set failed', { set: slug, device: device() })

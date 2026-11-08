@@ -35,6 +35,9 @@
     <button :class="['tb', { on: tool === 'measure' }]" title="Measure (M)" @click="$emit('tool', 'measure')">
       <svg viewBox="0 0 24 24"><path :d="ICONS.measure" /></svg><span>Measure</span>
     </button>
+    <button class="tb" title="New floor plan: start again from an empty room (Undo brings this one back)" @click="$emit('newplan')">
+      <svg viewBox="0 0 24 24"><path :d="ICONS.newplan" /></svg><span>New plan</span>
+    </button>
 
     <div class="chip-slot">
       <span v-if="placing" class="chip">
@@ -77,6 +80,7 @@ const ICONS: Record<string, string> = {
   camera: 'M3 8h11v9H3zM14 11l7-3v9l-7-3',
   undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
   redo: 'M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3',
+  newplan: 'M6 3h8l4 4v14H6zM14 3v4h4M12 11v6M9 14h6',
   fit: 'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
   marks: 'M5 6h14M12 6v12M5 20l2-2M17 20l2-2',
   sofa: 'M4 11V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3M3 11h18v6H3zM5 17v2M19 17v2M7 11v3h10v-3',
@@ -132,7 +136,7 @@ export default defineComponent({
   props: {
     tool: { type: String, required: true }
   },
-  emits: ['tool', 'add', 'undo', 'redo', 'fit', 'capture', 'line'],
+  emits: ['tool', 'add', 'undo', 'redo', 'fit', 'capture', 'line', 'newplan'],
   setup(props, { emit }) {
     const open = ref(false)
     const bar = ref<HTMLDivElement | null>(null)

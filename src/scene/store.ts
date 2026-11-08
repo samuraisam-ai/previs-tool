@@ -84,29 +84,32 @@ export function cameraPropsFor(subjectId: string | null): CameraProps {
   }
 }
 
-const subjectId = newId('subject')
-const cameraId = newId('camera')
+// The scene the app opens on: one room, a subject, a key and a camera. "New plan" starts from it again.
+export function startingScene(): SceneDoc {
+  const subjectId = newId('subject')
+  const cameraId = newId('camera')
+  const architecture = defaultArchitecture()
+  return {
+    walls: architecture.walls,
+    openings: [],
+    rooms: architecture.rooms,
+    items: [
+      { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75, props: defaultSubjectProps(0) },
+      {
+        id: newId('light'), kind: 'light', name: 'Key', x: -1.5, z: -0.6, rotationY: 50, height: 2.1,
+        props: { ...lightPropsFor(DEFAULT_FIXTURE), modifierId: 'para-90', cct: 4300, dimmer: 15 }
+      },
+      { id: cameraId, kind: 'camera', name: 'Camera A', x: 0.3, z: -1.8, rotationY: 0, height: 1.5, props: cameraPropsFor(subjectId) }
+    ],
+    selectedId: null,
+    activeCameraId: cameraId,
+    world: defaultWorld(),
+    lineOfAction: null,
+    marks: []
+  }
+}
 
-const initialArchitecture = defaultArchitecture()
-
-export const scene = reactive<SceneDoc>({
-  walls: initialArchitecture.walls,
-  openings: [],
-  rooms: initialArchitecture.rooms,
-  items: [
-    { id: subjectId, kind: 'subject', name: 'Subject', x: 0, z: 0.5, rotationY: 180, height: 1.75, props: defaultSubjectProps(0) },
-    {
-      id: newId('light'), kind: 'light', name: 'Key', x: -1.5, z: -0.6, rotationY: 50, height: 2.1,
-      props: { ...lightPropsFor(DEFAULT_FIXTURE), modifierId: 'para-90', cct: 4300, dimmer: 15 }
-    },
-    { id: cameraId, kind: 'camera', name: 'Camera A', x: 0.3, z: -1.8, rotationY: 0, height: 1.5, props: cameraPropsFor(subjectId) }
-  ],
-  selectedId: null,
-  activeCameraId: cameraId,
-  world: defaultWorld(),
-  lineOfAction: null,
-  marks: []
-})
+export const scene = reactive<SceneDoc>(startingScene())
 
 const counts: Record<ItemKind, number> = { subject: 1, light: 1, camera: 1, prop: 0 }
 

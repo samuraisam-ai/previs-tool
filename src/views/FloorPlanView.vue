@@ -1,7 +1,7 @@
 <template>
   <div class="plan">
     <div ref="area" class="canvas-area">
-      <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" @line="lineToggle" />
+      <PlanToolbar :tool="editor.tool" @tool="setTool" @add="onAdd" @undo="undo" @redo="redo" @fit="fit" @capture="capture" @line="lineToggle" @newplan="newPlan" />
       <LightLibrary v-if="showLibrary" @pick="addLight" @close="showLibrary = false" />
       <PropLibrary v-if="showProps" @pick="addPropPicked" @close="showProps = false" />
 
@@ -120,7 +120,9 @@ import SelectionPanel from '../plan/panels/SelectionPanel.vue'
 import WallPanel from '../plan/panels/WallPanel.vue'
 import { clearSelection, editor, isSelected, OPENING_TOOLS, setSelection, toggleSelection, Tool } from '../plan/editor'
 import { add as addPt, boundsOf, dist, projectOnWall, round3, snapAngle, snapToGrid, sub } from '../plan/geometry'
-import { redo, startHistory, undo } from '../plan/history'
+import { loadScene, redo, startHistory, undo } from '../plan/history'
+import { closeSet } from '../sets'
+import { track } from '../analytics'
 import { touchPick } from '../plan/touchPick'
 import {
   addOpening, addRoomRect, addWallAt, applyTransform, beginEndpointDrag, beginTransform, clampOffset, copySelection,
@@ -128,7 +130,7 @@ import {
   nudgeSelection, openingDefaults, openingFits, pasteClipboard, rotateAbout, scaleAbout, selectionBounds,
   selectionPoints, slideOpenings, snapCandidates, toggleDoor, TransformSession, translate
 } from '../plan/ops'
-import { addItem, getItem, scene } from '../scene/store'
+import { addItem, getItem, scene, startingScene } from '../scene/store'
 import { ItemKind, Pt, SceneItem, Wall } from '../scene/types'
 
 type Gesture =
@@ -248,6 +250,16 @@ export default defineComponent({
       editor.view.scale = Math.min(editor.size.w / w, (editor.size.h - top) / d, 400)
       editor.view.cx = (b.minX + b.maxX) / 2
       editor.view.cz = (b.minZ + b.maxZ) / 2 + top / 2 / editor.view.scale
+    }
+
+    // Start again from the empty room the app opens on, as one undo step so nothing is lost.
+    const newPlan = () => {
+      if (!window.confirm('Start a new floor plan? This clears the current plan. Undo brings it back.')) return
+      setTool('select')
+      loadScene(JSON.stringify(startingScene()))
+      closeSet()
+      fit()
+      track('New plan')
     }
 
     const onWheel = (event: WheelEvent) => {
@@ -863,7 +875,7 @@ export default defineComponent({
     }
 
     return {
-      capture, lineToggle,
+      capture, lineToggle, newPlan,
       svg, area, editor, setTool, showLibrary, showProps, loadDemo, addPropPicked, add, onAdd, addLight, undo, redo, fit, px, viewBox, grid, scaleBar,
       onDown, onMove, onUp, onWheel, onDouble, marqueeRect, panning, panel, hint, isPhone, panelOpen, added, addedKey
     }
