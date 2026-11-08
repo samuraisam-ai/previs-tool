@@ -103,26 +103,27 @@ const STUDY_DUSK: HouseSpec = {
   world: { preset: 'evening', percent: 15, kelvin: 5600, blackout: false, bounce: 30 }
 }
 
-// ── Bedroom at night, landing behind (Day 3: "Same light. Five different films.") ──
-// One Forza 300B II key; the Reel swaps its modifier (bare, octa, lantern, fresnel, projection).
-// The foot of the bed fills frame left, the landing shows through the doorway behind Maya, and
-// a sconce on the landing paints its back wall. Key and edge sit on her far side (frame right).
+// ── Bedroom at night, landing behind (Day 3: "One light. Five modifiers.") ──
+// One Forza 300B II key, nothing else; the Reel swaps its modifier (bare, reflector, octa, lantern, fresnel).
+// The landing shows through the doorway behind Maya: a desk with a lit table lamp and a laptop, and a
+// sconce on its back wall. The key sits high, about 60° off the lens axis, so the light wraps (Rembrandt).
 //   z 6 ┌─────────────────────┐
-//       │      Landing sconce │  sconce + painting, seen through the doorway
-//  4.4  ├─────────┐    ┌──────┤  doorway at x 2.3–3.5: left of Maya in frame
-//       │bed           edge   │
-//       │bed        Maya  key │
-//       │flag                 │
-//     0 └─────────────────────┘  Camera A front-left on a 50mm
+//       │      Landing  desk  │  desk + lamp + painting, seen through the doorway
+//  4.4  ├─────────┐    ┌──────┤  doorway at x 2.3–3.5: beside Maya in frame
+//       │bed                  │
+//       │bed        Maya      │
+//       │flag            key  │
+//     0 └─────────────────────┘  Camera A in the front corner on a 75mm, a little high, tilted down
 //      x 0                   5
 const D03_MAYA: [number, number] = [2.8, 2.8]
-const D03_CAM: [number, number] = [1.1, 0.5]
-const D03_KEY: [number, number] = [3.8, 1.3]
-const D03_EDGE: [number, number] = [4.85, 3.4]
+const D03_CAM: [number, number] = [1.2, 0.2]
+const D03_LAMP: [number, number] = [3.35, 5.9]
+// Key about 60° off the lens axis and higher (was ~70°, level): towards Rembrandt, the light wraps across the face.
+const D03_KEY: [number, number] = [3.44, 1.33]
 
 const BEDROOM_NIGHT: HouseSpec = {
   rooms: [
-    { name: 'Bedroom', r: [0, 0, 5, 4.4], floor: { material: 'wood', colour: '#3e2c22', colour2: '#33241b', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#3f4a57' } },
+    { name: 'Bedroom', r: [0, 0, 5, 4.4], floor: { material: 'wood', colour: '#3e2c22', colour2: '#33241b', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#6a7480' } },
     { name: 'Landing', r: [0, 4.4, 5, 6.2], floor: { material: 'wood', colour: '#5a4030', colour2: '#4a3427', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#9a8c78' } }
   ],
   openings: [
@@ -137,18 +138,21 @@ const BEDROOM_NIGHT: HouseSpec = {
     { id: 'curtains', x: 4.95, z: 2.9, s: { w: 1.6 }, o: { state: 'half' }, f: { fabric: { material: 'velvet', colour: '#2b2f3a' } } },
     // Landing, seen through the doorway: the sconce paints its back wall.
     { id: 'sconce', x: 2.4, z: 6.15, light: true },
+    // A desk on the landing: the lamp and the laptop screen leak light into the bedroom behind Maya.
+    { id: 'desk', x: 3.0, z: 5.8, r: 180 },
+    { id: 'table-lamp', x: D03_LAMP[0], z: D03_LAMP[1], light: true },
+    { id: 'laptop', x: 3.0, z: 5.75, r: 180 },
     { id: 'painting', x: 3.1, z: 6.15, e: 1.5, s: { w: 0.55, h: 0.7 }, f: { canvas: { pattern: 'geometric', colour: '#d8c7a6', colour2: '#3b2f2a', scale: 0.5 } } },
-    { id: 'floor-plant', x: 4.3, z: 5.8, o: { species: 'snake' }, s: { h: 0.9 } },
+    { id: 'floor-plant', x: 1.6, z: 5.8, o: { species: 'snake' }, s: { h: 0.9 } },
     // Negative fill: a black flag on Maya's camera side, just out of frame left.
     { id: 'panel', name: 'Negative fill (black flag)', x: 0.7, z: 1.6, r: aim([0.7, 1.6], D03_MAYA), s: { w: 1.0, h: 1.8 }, f: { surface: { material: 'fabric', colour: '#111111' } } }
   ],
   cast: [{ name: 'Maya', x: D03_MAYA[0], z: D03_MAYA[1], r: 205, height: 1.7, props: { pose: 'relaxed' } }],
-  cameras: [{ name: 'Camera A', x: D03_CAM[0], z: D03_CAM[1], r: aim(D03_CAM, [2.5, 3.0]), height: 1.5, lens: 'aizu-50', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
+  cameras: [{ name: 'Camera A', x: D03_CAM[0], z: D03_CAM[1], r: 26, height: 1.75, tilt: 4, lens: 'aizu-75', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 4 } } }],
   lights: [
-    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D03_KEY[0], z: D03_KEY[1], r: aim(D03_KEY, D03_MAYA), height: 2.2, tilt: 12, dimmer: 8, cct: 4300 },
-    { name: 'Edge', fixture: 'forza-60b-ii', modifier: 'fl-11', x: D03_EDGE[0], z: D03_EDGE[1], r: aim(D03_EDGE, D03_MAYA), height: 2.2, tilt: 14, dimmer: 45, cct: 3600 }
+    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'sb-oc-120', x: D03_KEY[0], z: D03_KEY[1], r: aim(D03_KEY, D03_MAYA), height: 2.8, tilt: 37, dimmer: 8, cct: 4300 }
   ],
-  world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 30 }
+  world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 45 }
 }
 
 export const CAMPAIGN_SETS: Record<string, CampaignSet> = {
