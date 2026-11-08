@@ -158,7 +158,61 @@ const BEDROOM_NIGHT: HouseSpec = {
   world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 45 }
 }
 
+// ── Workshop at night (Day 4: "12 cinema primes" carousel and "Same shot. Four lenses." Reel) ──
+// Reference ref-01: someone hunched over a workbench at night, a table lamp on the bench behind them the only
+// visible source, nearly a silhouette with the shadow side to camera, a cool window edge, a dirty foreground.
+// Maya works side-on at the bench; the key comes from beyond her, motivated by the lamp, and a cool edge
+// from the window behind. A hall glows through the doorway for depth.
+//   z 6 ┌─────────────────────┐
+//       │   sconce   Hall     │
+//  4.4  ├──┐   ┌──window──────┤  doorway at x 1.4–2.4, window behind the bench
+//       │         edge   lamp │
+//       │            Maya bench│  bench against the right wall, Maya facing it
+//       │ plant          key  │
+//     0 └─────────────────────┘  Camera A front-left, the plant soft in the foreground
+//      x 0                   5
+const D04_MAYA: [number, number] = [3.95, 2.5]
+const D04_CAM: [number, number] = [3.6, 0.4]
+const D04_LAMP: [number, number] = [4.7, 3.15]
+const D04_KEY: [number, number] = [4.8, 3.0]
+const D04_EDGE: [number, number] = [3.3, 5.4]
+
+const WORKSHOP_NIGHT: HouseSpec = {
+  rooms: [
+    { name: 'Workshop', r: [0, 0, 5, 4.4], floor: { material: 'concrete', colour: '#4a4744', colour2: '#3c3936', scale: 1.0 }, walls: { material: 'painted', colour: '#5d6168' } },
+    { name: 'Hall', r: [0, 4.4, 5, 6.0], floor: { material: 'wood', colour: '#5a4030', colour2: '#4a3427', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#9a8c78' } }
+  ],
+  openings: [
+    ['opening', 1.9, 4.4, 1.0],
+    ['window', 3.6, 4.4, 1.4],
+    ['door', 0, 2.2]
+  ],
+  props: [
+    // The workbench against the right wall, Maya side-on at it; the lamp on its far end is in frame behind her.
+    { id: 'desk', x: 4.62, z: 2.6, r: 270, s: { w: 1.8 } },
+    { id: 'table-lamp', x: D04_LAMP[0], z: D04_LAMP[1], light: true },
+    { id: 'box', x: 4.65, z: 2.3, s: { w: 0.3, d: 0.25, h: 0.18 } },
+    { id: 'wall-cabinets', x: 4.8, z: 2.6, r: 270, e: 1.6, s: { w: 1.6 } },
+    { id: 'bookshelf', x: 0.3, z: 3.2, r: 90, s: { w: 1.2 }, o: { books: 'some' } },
+    { id: 'filing-cabinet', x: 0.35, z: 4.05 },
+    // The hall behind, seen through the doorway.
+    { id: 'sconce', x: 1.9, z: 5.95, light: true },
+    { id: 'console-table', x: 1.9, z: 5.75, r: 180 },
+    // Dirty frame: a plant close to the lens, soft at the left edge of the wider lenses.
+    { id: 'floor-plant', x: 3.3, z: 1.15, o: { species: 'fiddle' }, s: { h: 1.3 } }
+  ],
+  cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 90, height: 1.7, props: { pose: 'lean-counter' } }],
+  cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: aim(D04_CAM, [4.3, 2.6]), height: 1.45, tilt: 4, lens: 'aizu-35', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 5 } } }],
+  lights: [
+    { name: 'Key', fixture: 'forza-60b-ii', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.95, tilt: 25, dimmer: 30, cct: 3200 },
+    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.55, tilt: 18, dimmer: 45, cct: 6500 }
+  ],
+  world: { preset: 'night', percent: 4, kelvin: 7500, blackout: false, bounce: 25 }
+}
+
 export const CAMPAIGN_SETS: Record<string, CampaignSet> = {
+  // Day 4: the workshop, through every Aizu prime.
+  d04: { title: 'Workshop at night', view: 'Camera A', spec: WORKSHOP_NIGHT },
   // Day 3: one key, five modifiers.
   d03: { title: 'Bedroom at night', view: 'Camera A', spec: BEDROOM_NIGHT },
   // Day 2: built from an empty floor in the Reel.
