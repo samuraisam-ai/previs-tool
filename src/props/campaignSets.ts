@@ -159,20 +159,20 @@ const BEDROOM_NIGHT: HouseSpec = {
 }
 
 // ── Office by day (Day 4: "12 cinema primes" carousel and "Same shot. Four lenses." Reel) ──
-// Reference ref-05, matched as closely as the app allows: Maya seated behind a wide mahogany desk, facing
-// the lens a touch left of centre, a dark wood pier behind her head between two tall windows with
+// Reference ref-05, matched as closely as the app allows: Maya seated behind a wide mahogany desk, her
+// body turned open to the camera, which sits off to the side, a dark wood pier behind her head between two tall windows with
 // vertical blinds (slats built from thin panels), a brass desk lamp at frame right, manila folders on
 // the desk. Daylight: a soft key from the left window, an edge from the same window behind her.
 //   z 4.4 ├──window──┬pier┬──window──┬wood┤  blinds half open
 //         │   edge        Maya           │  office chair
-//         │ key       ═══ desk ═══ lamp  │
+//         │ key        ═══ desk ═══ lamp │
 //         │                              │
-//     0   └───────── Camera A ───────────┘  seated eye height, 35mm, straight on
+//     0   └── Camera A ──────────────────┘  seated eye height, 75mm, panned right to Maya
 //        x 0                            5
-const D04_MAYA: [number, number] = [2.55, 3.45]
-const D04_CAM: [number, number] = [2.6, 0.75]
-// Placed so its reflection in the window glass lands on the wood pier, not in the window.
-const D04_KEY: [number, number] = [1.6, 1.0]
+const D04_MAYA: [number, number] = [2.95, 3.45]
+// Okuhle's angle (9 Nov, from his "What I'm looking for" setup): off to the side, 75mm, panned back to Maya.
+const D04_CAM: [number, number] = [1.1, 0.55]
+const D04_KEY: [number, number] = [0.6, 1.9]
 // The edge stands in the left window's corner, out of frame from 35mm up (the wide lenses show the rig).
 const D04_EDGE: [number, number] = [0.2, 3.95]
 const WALL_Z = 4.4
@@ -182,7 +182,7 @@ const blinds = (x0: number, x1: number, sill: number, top: number): HouseSpec['p
   const n = Math.round((x1 - x0) / 0.1)
   return Array.from({ length: n }, (_, i) => ({
     id: 'panel', name: 'Blind slat', x: +(x0 + 0.05 + i * ((x1 - x0 - 0.1) / (n - 1))).toFixed(3), z: WALL_Z - 0.12, r: 55,
-    e: sill + 0.03, s: { w: 0.09, d: 0.004, h: top - sill - 0.08 }, f: { surface: { material: 'glow', colour: '#d9cdb2' } }
+    e: sill + 0.03, s: { w: 0.09, d: 0.004, h: top - sill - 0.08 }, f: { surface: { material: 'glow', colour: '#d9cdb2', roughness: 1 } }
   }))
 }
 
@@ -207,20 +207,20 @@ const OFFICE_DAY: HouseSpec = {
     // The low dark sill (radiator cover) under the right window.
     { id: 'sideboard', x: 3.45, z: WALL_Z - 0.25, r: 180, s: { w: 1.1, h: 0.8 }, f: { fronts: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' }, body: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' } } },
     // Desk across the frame, Maya behind it in the office chair.
-    { id: 'desk', x: 3.05, z: 2.75, r: 180, s: { w: 2.0, d: 0.85 }, f: { top: { material: 'wood', colour: '#4a2216', colour2: '#381910' }, base: { material: 'wood', colour: '#3a1a10' } } },
+    { id: 'desk', x: 3.25, z: 2.75, r: 180, s: { w: 2.0, d: 0.85 }, f: { top: { material: 'wood', colour: '#4a2216', colour2: '#381910' }, base: { material: 'wood', colour: '#3a1a10' } } },
     { id: 'office-chair', x: D04_MAYA[0], z: D04_MAYA[1] + 0.05, r: 180, f: { seat: { material: 'leather', colour: '#2a2220' } } },
     // Off, as in the reference: by day it is set dressing, not a source.
-    { id: 'desk-lamp', x: 3.4, z: 2.95, r: 270, s: { h: 0.7 }, f: { body: { material: 'metal', colour: '#d9c9a4', roughness: 0.2 } } },
+    { id: 'desk-lamp', x: 3.6, z: 2.95, r: 270, s: { h: 0.7 }, f: { body: { material: 'metal', colour: '#d9c9a4', roughness: 0.2 } } },
     // Dressing: a stack of manila folders, a keyboard, an open folder in front of her.
-    { id: 'box', name: 'Folders', x: 3.2, z: 2.85, e: 0.75, r: 8, s: { w: 0.36, d: 0.27, h: 0.06 }, f: { surface: { material: 'paper', colour: '#c9a46a' } } },
+    { id: 'box', name: 'Folders', x: 3.4, z: 2.85, e: 0.75, r: 8, s: { w: 0.36, d: 0.27, h: 0.06 }, f: { surface: { material: 'paper', colour: '#c9a46a' } } },
     { id: 'box', name: 'Keyboard', x: 2.85, z: 2.85, e: 0.75, r: 6, s: { w: 0.44, d: 0.16, h: 0.03 }, f: { surface: { material: 'plastic', colour: '#18181a' } } },
     { id: 'box', name: 'Open folder', x: 2.5, z: 2.6, e: 0.75, r: -4, s: { w: 0.45, d: 0.3, h: 0.01 }, f: { surface: { material: 'paper', colour: '#e3d2a8' } } }
   ],
-  cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 184, height: 1.85, props: { pose: 'sit', skin: '#7a5038', top: '#2f2c2a', bottom: '#2a2826', headYaw: 6 } }],
-  cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: 2, height: 1.4, tilt: 6, lens: 'aizu-40', subject: 0, settings: { tStop: 2.8, nd: { fitted: true, stops: 5 }, wb: 5600 } }],
+  cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 220, height: 1.85, props: { pose: 'sit', skin: '#7a5038', top: '#2f2c2a', bottom: '#2a2826', headYaw: 6 } }],
+  cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: 30, height: 1.3, tilt: 5, lens: 'aizu-75', subject: 0, settings: { tStop: 2.8, nd: { fitted: true, stops: 5 }, wb: 5600 } }],
   lights: [
-    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'lt-120', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.9, tilt: 8, dimmer: 100, cct: 5000 },
-    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.6, tilt: 30, dimmer: 100, cct: 5000 }
+    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'lt-120', x: D04_KEY[0], z: D04_KEY[1], r: 52, height: 1.9, tilt: 8, dimmer: 100, cct: 5000 },
+    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: 102, height: 2.6, tilt: 30, dimmer: 100, cct: 5000 }
   ],
   world: { preset: 'day', percent: 20, kelvin: 4600, blackout: false, bounce: 60 }
 }
