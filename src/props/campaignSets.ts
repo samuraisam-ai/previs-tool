@@ -172,7 +172,8 @@ const BEDROOM_NIGHT: HouseSpec = {
 const D04_MAYA: [number, number] = [2.95, 3.45]
 // Okuhle's angle (9 Nov, from his "What I'm looking for" setup): off to the side, 75mm, panned back to Maya.
 const D04_CAM: [number, number] = [1.1, 0.55]
-const D04_KEY: [number, number] = [0.6, 1.9]
+// Behind the camera on the window side: the 1.2 m lantern stays out of frame even on the 18mm.
+const D04_KEY: [number, number] = [0.5, 0.3]
 // The edge stands in the left window's corner, out of frame from 35mm up (the wide lenses show the rig).
 const D04_EDGE: [number, number] = [0.2, 3.95]
 const WALL_Z = 4.4
@@ -219,7 +220,7 @@ const OFFICE_DAY: HouseSpec = {
   cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 220, height: 1.85, props: { pose: 'sit', skin: '#7a5038', top: '#2f2c2a', bottom: '#2a2826', headYaw: 6 } }],
   cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: 30, height: 1.3, tilt: 5, lens: 'aizu-75', subject: 0, settings: { tStop: 2.8, nd: { fitted: true, stops: 5 }, wb: 5600 } }],
   lights: [
-    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'lt-120', x: D04_KEY[0], z: D04_KEY[1], r: 52, height: 1.9, tilt: 8, dimmer: 100, cct: 5000 },
+    { name: 'Key', fixture: 'forza-500b-ii', modifier: 'lt-120', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 2.2, tilt: 10, dimmer: 100, cct: 5000 },
     { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: 102, height: 2.6, tilt: 30, dimmer: 100, cct: 5000 }
   ],
   world: { preset: 'day', percent: 20, kelvin: 4600, blackout: false, bounce: 60 }
