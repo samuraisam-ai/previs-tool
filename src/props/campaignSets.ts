@@ -158,61 +158,76 @@ const BEDROOM_NIGHT: HouseSpec = {
   world: { preset: 'night', percent: 15, kelvin: 7500, blackout: false, bounce: 45 }
 }
 
-// ── Workshop at night (Day 4: "12 cinema primes" carousel and "Same shot. Four lenses." Reel) ──
-// Reference ref-01: someone hunched over a workbench at night, a table lamp on the bench behind them the only
-// visible source, nearly a silhouette with the shadow side to camera, a cool window edge, a dirty foreground.
-// Maya works side-on at the bench; the key comes from beyond her, motivated by the lamp, and a cool edge
-// from the window behind. A hall glows through the doorway for depth.
-//   z 6 ┌─────────────────────┐
-//       │   sconce   Hall     │
-//  4.4  ├──┐   ┌──window──────┤  doorway at x 1.4–2.4, window behind the bench
-//       │         edge   lamp │
-//       │            Maya bench│  bench against the right wall, Maya facing it
-//       │ plant          key  │
-//     0 └─────────────────────┘  Camera A front-left, the plant soft in the foreground
-//      x 0                   5
-const D04_MAYA: [number, number] = [3.95, 2.5]
-const D04_CAM: [number, number] = [3.6, 0.4]
-const D04_LAMP: [number, number] = [4.7, 3.15]
-const D04_KEY: [number, number] = [4.8, 3.0]
-const D04_EDGE: [number, number] = [3.3, 5.4]
+// ── Office by day (Day 4: "12 cinema primes" carousel and "Same shot. Four lenses." Reel) ──
+// Reference ref-05, matched as closely as the app allows: Maya seated behind a wide mahogany desk, facing
+// the lens a touch left of centre, a dark wood pier behind her head between two tall windows with
+// vertical blinds (slats built from thin panels), a brass desk lamp at frame right, manila folders on
+// the desk. Daylight: a soft key from the left window, an edge from the same window behind her.
+//   z 4.4 ├──window──┬pier┬──window──┬wood┤  blinds half open
+//         │   edge        Maya           │  office chair
+//         │ key       ═══ desk ═══ lamp  │
+//         │                              │
+//     0   └───────── Camera A ───────────┘  seated eye height, 35mm, straight on
+//        x 0                            5
+const D04_MAYA: [number, number] = [2.55, 3.45]
+const D04_CAM: [number, number] = [2.6, 0.75]
+// Placed so its reflection in the window glass lands on the wood pier, not in the window.
+const D04_KEY: [number, number] = [1.6, 1.0]
+// The edge stands in the left window's corner, out of frame from 35mm up (the wide lenses show the rig).
+const D04_EDGE: [number, number] = [0.2, 3.95]
+const WALL_Z = 4.4
 
-const WORKSHOP_NIGHT: HouseSpec = {
+// Vertical blinds: thin slats across a window, turned so daylight slips between them.
+const blinds = (x0: number, x1: number, sill: number, top: number): HouseSpec['props'] => {
+  const n = Math.round((x1 - x0) / 0.1)
+  return Array.from({ length: n }, (_, i) => ({
+    id: 'panel', name: 'Blind slat', x: +(x0 + 0.05 + i * ((x1 - x0 - 0.1) / (n - 1))).toFixed(3), z: WALL_Z - 0.12, r: 55,
+    e: sill + 0.03, s: { w: 0.09, d: 0.004, h: top - sill - 0.08 }, f: { surface: { material: 'glow', colour: '#d9cdb2' } }
+  }))
+}
+
+const OFFICE_DAY: HouseSpec = {
   rooms: [
-    { name: 'Workshop', r: [0, 0, 5, 4.4], floor: { material: 'concrete', colour: '#4a4744', colour2: '#3c3936', scale: 1.0 }, walls: { material: 'painted', colour: '#5d6168' } },
-    { name: 'Hall', r: [0, 4.4, 5, 6.0], floor: { material: 'wood', colour: '#5a4030', colour2: '#4a3427', pattern: 'planks', scale: 1.0 }, walls: { material: 'painted', colour: '#9a8c78' } }
+    { name: 'Office', r: [0, 0, 5, WALL_Z], floor: { material: 'wood', colour: '#3a2418', colour2: '#2e1c12', pattern: 'planks', scale: 0.9 }, walls: { material: 'painted', colour: '#8a7a64' } }
   ],
   openings: [
-    ['opening', 1.9, 4.4, 1.0],
-    ['window', 3.6, 4.4, 1.4],
-    ['door', 0, 2.2]
+    ['window', 1.15, WALL_Z, 1.7, 0.7, 1.9],
+    ['window', 3.45, WALL_Z, 1.1, 0.85, 1.75]
   ],
   props: [
-    // The workbench against the right wall, Maya side-on at it; the lamp on its far end is in frame behind her.
-    { id: 'desk', x: 4.62, z: 2.6, r: 270, s: { w: 1.8 } },
-    { id: 'table-lamp', x: D04_LAMP[0], z: D04_LAMP[1], light: true },
-    { id: 'box', x: 4.65, z: 2.3, s: { w: 0.3, d: 0.25, h: 0.18 } },
-    { id: 'wall-cabinets', x: 4.8, z: 2.6, r: 270, e: 1.6, s: { w: 1.6 } },
-    { id: 'bookshelf', x: 0.3, z: 3.2, r: 90, s: { w: 1.2 }, o: { books: 'some' } },
-    { id: 'filing-cabinet', x: 0.35, z: 4.05 },
-    // The hall behind, seen through the doorway.
-    { id: 'sconce', x: 1.9, z: 5.95, light: true },
-    { id: 'console-table', x: 1.9, z: 5.75, r: 180 },
-    // Dirty frame: a plant close to the lens, soft at the left edge of the wider lenses.
-    { id: 'floor-plant', x: 3.3, z: 1.15, o: { species: 'fiddle' }, s: { h: 1.3 } }
+    // Day outside: a glowing backing (a translight) behind each window, the blinds backlit in front of it.
+    { id: 'panel', name: 'Translight', x: 1.15, z: WALL_Z + 0.9, s: { w: 2.4, d: 0.02, h: 2.7 }, f: { surface: { material: 'glow', colour: '#fff1dc' } } },
+    { id: 'panel', name: 'Translight', x: 3.45, z: WALL_Z + 0.9, s: { w: 1.8, d: 0.02, h: 2.7 }, f: { surface: { material: 'glow', colour: '#fff1dc' } } },
+    ...blinds(0.3, 2.0, 0.7, 2.6),
+    ...blinds(2.9, 4.0, 0.85, 2.6),
+    // The dark wood pier behind her head, with its gold patterned inset, and a second pier at frame right.
+    { id: 'panel', name: 'Wood pier', x: 2.45, z: WALL_Z - 0.06, s: { w: 0.85, d: 0.1, h: 2.7 }, f: { surface: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' } } },
+    { id: 'panel', name: 'Gold inset', x: 2.45, z: WALL_Z - 0.12, e: 1.0, s: { w: 0.45, d: 0.01, h: 0.8 }, f: { surface: { material: 'painted', pattern: 'floral', colour: '#6e5734', colour2: '#3e2e18', scale: 0.2 } } },
+    { id: 'panel', name: 'Wood pier', x: 4.3, z: WALL_Z - 0.06, s: { w: 0.55, d: 0.1, h: 2.7 }, f: { surface: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' } } },
+    // The low dark sill (radiator cover) under the right window.
+    { id: 'sideboard', x: 3.45, z: WALL_Z - 0.25, r: 180, s: { w: 1.1, h: 0.8 }, f: { fronts: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' }, body: { material: 'wood', colour: '#2a1a12', colour2: '#1f130d' } } },
+    // Desk across the frame, Maya behind it in the office chair.
+    { id: 'desk', x: 3.05, z: 2.75, r: 180, s: { w: 2.0, d: 0.85 }, f: { top: { material: 'wood', colour: '#4a2216', colour2: '#381910' }, base: { material: 'wood', colour: '#3a1a10' } } },
+    { id: 'office-chair', x: D04_MAYA[0], z: D04_MAYA[1] + 0.05, r: 180, f: { seat: { material: 'leather', colour: '#2a2220' } } },
+    // Off, as in the reference: by day it is set dressing, not a source.
+    { id: 'desk-lamp', x: 3.4, z: 2.95, r: 270, s: { h: 0.7 }, f: { body: { material: 'metal', colour: '#d9c9a4', roughness: 0.2 } } },
+    // Dressing: a stack of manila folders, a keyboard, an open folder in front of her.
+    { id: 'box', name: 'Folders', x: 3.2, z: 2.85, e: 0.75, r: 8, s: { w: 0.36, d: 0.27, h: 0.06 }, f: { surface: { material: 'paper', colour: '#c9a46a' } } },
+    { id: 'box', name: 'Keyboard', x: 2.85, z: 2.85, e: 0.75, r: 6, s: { w: 0.44, d: 0.16, h: 0.03 }, f: { surface: { material: 'plastic', colour: '#18181a' } } },
+    { id: 'box', name: 'Open folder', x: 2.5, z: 2.6, e: 0.75, r: -4, s: { w: 0.45, d: 0.3, h: 0.01 }, f: { surface: { material: 'paper', colour: '#e3d2a8' } } }
   ],
-  cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 90, height: 1.7, props: { pose: 'lean-counter' } }],
-  cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: aim(D04_CAM, [4.3, 2.6]), height: 1.45, tilt: 4, lens: 'aizu-35', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 5 } } }],
+  cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 184, height: 1.85, props: { pose: 'sit', skin: '#7a5038', top: '#2f2c2a', bottom: '#2a2826', headYaw: 6 } }],
+  cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: 2, height: 1.4, tilt: 6, lens: 'aizu-40', subject: 0, settings: { tStop: 2.8, nd: { fitted: true, stops: 5 }, wb: 5600 } }],
   lights: [
-    { name: 'Key', fixture: 'forza-60b-ii', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.95, tilt: 25, dimmer: 10, cct: 3200 },
-    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.55, tilt: 18, dimmer: 40, cct: 6500 }
+    { name: 'Key', fixture: 'forza-300b-ii', modifier: 'lt-120', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.9, tilt: 8, dimmer: 100, cct: 5000 },
+    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.6, tilt: 30, dimmer: 100, cct: 5000 }
   ],
-  world: { preset: 'night', percent: 4, kelvin: 7500, blackout: false, bounce: 25 }
+  world: { preset: 'day', percent: 20, kelvin: 4600, blackout: false, bounce: 60 }
 }
 
 export const CAMPAIGN_SETS: Record<string, CampaignSet> = {
-  // Day 4: the workshop, through every Aizu prime.
-  d04: { title: 'Workshop at night', view: 'Camera A', spec: WORKSHOP_NIGHT },
+  // Day 4: the office (ref-05), through every Aizu prime.
+  d04: { title: 'Office by day', view: 'Camera A', spec: OFFICE_DAY },
   // Day 3: one key, five modifiers.
   d03: { title: 'Bedroom at night', view: 'Camera A', spec: BEDROOM_NIGHT },
   // Day 2: built from an empty floor in the Reel.

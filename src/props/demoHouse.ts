@@ -29,7 +29,8 @@ type Rect = [number, number, number, number] // x0, z0, x1, z1
 type FinishSpec = Partial<Finish> & { material: Finish['material'] }
 interface RoomSpec { name: string; r: Rect; floor: FinishSpec; walls?: FinishSpec }
 // [kind, x, z, width?, sill?] — openings are found on whichever wall runs through the point.
-type OpeningSpec = [OpeningKind, number, number, number?, number?]
+// [kind, x, z, width?, sill?, height?]
+type OpeningSpec = [OpeningKind, number, number, number?, number?, number?]
 interface P { id: string; x: number; z: number; r?: number; o?: { [k: string]: OptionValue }; s?: { w?: number; d?: number; h?: number }; f?: { [slot: string]: Partial<Finish> }; name?: string; e?: number; light?: boolean }
 interface CastSpec { name: string; x: number; z: number; r: number; height: number; props?: Partial<SubjectProps> }
 interface CamSpec { name: string; x: number; z: number; r: number; height: number; lens: string; subject: number; tilt?: number; settings?: Partial<CameraProps> }
@@ -361,13 +362,13 @@ function houseDoc(spec: HouseSpec): { doc: object; built: Array<PropItem | null>
     }
   })
   const openings: Opening[] = []
-  spec.openings.forEach(([kind, x, z, width, sill]) => {
+  spec.openings.forEach(([kind, x, z, width, sill, height]) => {
     const hit = findWall(walls, { x, z })
     if (!hit) return
     const d = openingDefaults(kind)
     openings.push({
       id: newId(kind === 'window' ? 'window' : 'door'), wallId: hit.wall.id, kind, offset: Math.round(hit.along * 1000) / 1000,
-      width: width ?? d.width, height: kind === 'window' && sill ? 0.8 : d.height, sill: sill ?? d.sill,
+      width: width ?? d.width, height: height ?? (kind === 'window' && sill ? 0.8 : d.height), sill: sill ?? d.sill,
       hinge: 'left', swing: 'in', openAngle: kind === 'door' ? 70 : 0, openTo: 90
     })
   })
