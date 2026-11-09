@@ -204,8 +204,8 @@ const WORKSHOP_NIGHT: HouseSpec = {
   cast: [{ name: 'Maya', x: D04_MAYA[0], z: D04_MAYA[1], r: 90, height: 1.7, props: { pose: 'lean-counter' } }],
   cameras: [{ name: 'Camera A', x: D04_CAM[0], z: D04_CAM[1], r: aim(D04_CAM, [4.3, 2.6]), height: 1.45, tilt: 4, lens: 'aizu-35', subject: 0, settings: { tStop: 2, nd: { fitted: true, stops: 5 } } }],
   lights: [
-    { name: 'Key', fixture: 'forza-60b-ii', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.95, tilt: 25, dimmer: 30, cct: 3200 },
-    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.55, tilt: 18, dimmer: 45, cct: 6500 }
+    { name: 'Key', fixture: 'forza-60b-ii', x: D04_KEY[0], z: D04_KEY[1], r: aim(D04_KEY, D04_MAYA), height: 1.95, tilt: 25, dimmer: 10, cct: 3200 },
+    { name: 'Edge', fixture: 'forza-300b-ii', modifier: 'fl-20g', x: D04_EDGE[0], z: D04_EDGE[1], r: aim(D04_EDGE, D04_MAYA), height: 2.55, tilt: 18, dimmer: 40, cct: 6500 }
   ],
   world: { preset: 'night', percent: 4, kelvin: 7500, blackout: false, bounce: 25 }
 }
